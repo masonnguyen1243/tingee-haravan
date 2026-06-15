@@ -15,6 +15,23 @@ Format: `[version] YYYY-MM-DD — Summary`
 
 ---
 
+## [0.3.0] 2026-06-15 — Phase 2: Core UI
+
+- Created `public/setup.html` — 3-step merchant config wizard (Haravan → Tingee → Account)
+  - Steps 2 and 3 locked (greyed out, non-interactive) until previous step completes
+  - Completed steps get green border and checkmark via `.done` CSS class
+  - Inline validation: each button shows an error below if required fields are empty
+  - Success banner appears after Step 3 is confirmed
+  - Step 2 populates account dropdown with dummy data (replaced by API in Phase 4)
+- Created `public/pay.html` — customer QR payment page
+  - Loading spinner shown on initial load
+  - Content area (amount, QR placeholder, transfer note, warning box) hidden until loaded
+  - Three status states: pending (spinner), paid (green), mismatch (orange)
+  - Error state shown if `order_id` is missing from URL
+  - All state-switch functions exposed on `window` for DevTools testing: `showLoading()`, `showContent({amount, note})`, `showError(msg)`, `showStatus('pending'|'paid'|'mismatch')`
+- No API calls in this phase — all interactions are client-side only
+- Verified: 34/34 structural and logic checks pass
+
 ## [0.2.1] 2026-06-15 — Migrate Phase 1 to TypeScript
 
 - Replaced `src/app.js` / `src/server.js` with `src/app.ts` / `src/server.ts`

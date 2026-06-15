@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thanh toán VietQR</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f4f6f9;
+      color: #1a1a2e;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 40px 16px 60px;
+    }
+
+    .container { width: 100%; max-width: 420px; }
+
+    /* ── Loading state ── */
+    #stateLoading {
+      text-align: center;
+      padding: 60px 0;
+      color: #6b7280;
+    }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid #e5e7eb;
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #stateLoading p { font-size: 0.9rem; }
+
+    /* ── Content state ── */
+    #stateContent { display: none; }
+
+    .card {
+      background: #fff;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 14px;
+      padding: 24px;
+      margin-bottom: 14px;
+    }
+
+    .amount-label { font-size: 0.8rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+    .amount-value { font-size: 2rem; font-weight: 700; color: #1a1a2e; }
+    .amount-currency { font-size: 1rem; color: #6b7280; margin-left: 4px; }
+
+    .qr-wrap {
+      margin: 20px auto;
+      width: 200px; height: 200px;
+      border: 1.5px dashed #d1d5db;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      background: #fafafa;
+      color: #9ca3af;
+      font-size: 0.8rem;
+    }
+    .qr-wrap img { width: 100%; height: 100%; object-fit: contain; border-radius: 10px; display: none; }
+
+    .note-label { font-size: 0.8rem; font-weight: 600; color: #6b7280; margin-bottom: 4px; }
+    .note-value {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: #1a1a2e;
+      background: #f4f6f9;
+      border-radius: 8px;
+      padding: 10px 14px;
+    }
+
+    .warning-box {
+      margin-top: 14px;
+      background: #fffbeb;
+      border: 1.5px solid #fde68a;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 0.83rem;
+      color: #92400e;
+      line-height: 1.5;
+    }
+    .warning-box strong { display: block; margin-bottom: 2px; }
+
+    /* ── Status area ── */
+    .status-area { text-align: center; padding: 20px 0; }
+
+    #statusPending { display: flex; flex-direction: column; align-items: center; gap: 10px; color: #6b7280; }
+    #statusPending .spinner { margin: 0; }
+    #statusPending p { font-size: 0.9rem; }
+
+    #statusPaid {
+      display: none;
+      background: #f0fdf4;
+      border: 1.5px solid #22c55e;
+      border-radius: 12px;
+      padding: 20px;
+    }
+    #statusPaid .icon { font-size: 2.2rem; margin-bottom: 8px; }
+    #statusPaid h3 { font-size: 1rem; color: #166534; margin-bottom: 4px; }
+    #statusPaid p  { font-size: 0.85rem; color: #4b7a56; }
+
+    #statusMismatch {
+      display: none;
+      background: #fff7ed;
+      border: 1.5px solid #fb923c;
+      border-radius: 12px;
+      padding: 20px;
+    }
+    #statusMismatch .icon { font-size: 2.2rem; margin-bottom: 8px; }
+    #statusMismatch h3 { font-size: 1rem; color: #9a3412; margin-bottom: 4px; }
+    #statusMismatch p  { font-size: 0.85rem; color: #7c3e1a; line-height: 1.5; }
+
+    /* ── Error state ── */
+    #stateError {
+      display: none;
+      text-align: center;
+      padding: 60px 0;
+    }
+    #stateError .icon { font-size: 2.5rem; margin-bottom: 12px; }
+    #stateError h2 { font-size: 1rem; color: #dc2626; margin-bottom: 6px; }
+    #stateError p  { font-size: 0.85rem; color: #6b7280; line-height: 1.5; }
+    #errorDetail  { margin-top: 8px; font-size: 0.8rem; color: #9ca3af; }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- Loading state (shown on initial page load) -->
+    <div id="stateLoading">
+      <div class="spinner"></div>
+      <p>Đang tải thông tin thanh toán…</p>
+    </div>
+
+    <!-- Content state (shown after API responds) -->
+    <div id="stateContent">
+
+      <div class="card">
+        <!-- Amount -->
+        <div class="amount-label">Số tiền cần chuyển</div>
+        <div class="amount-value" id="displayAmount">500,000<span class="amount-currency">₫</span></div>
+
+        <!-- QR image placeholder -->
+        <div class="qr-wrap" id="qrWrap">
+          <span>QR sẽ hiển thị ở đây</span>
+          <img id="qrImage" src="" alt="VietQR">
+        </div>
+
+        <!-- Transfer note -->
+        <div class="note-label">Nội dung chuyển khoản</div>
+        <div class="note-value" id="displayNote">TGXXXXXXX</div>
+
+        <!-- Warning -->
+        <div class="warning-box">
+          <strong>⚠ Quan trọng</strong>
+          Giữ nguyên nội dung chuyển khoản. Thay đổi nội dung sẽ khiến hệ thống không thể xác nhận đơn hàng của bạn.
+        </div>
+      </div>
+
+      <!-- Status -->
+      <div class="status-area">
+        <div id="statusPending">
+          <div class="spinner"></div>
+          <p>Đang chờ xác nhận thanh toán…</p>
+        </div>
+
+        <div id="statusPaid">
+          <div class="icon">✅</div>
+          <h3>Thanh toán thành công!</h3>
+          <p>Đơn hàng của bạn đã được xác nhận. Cảm ơn bạn đã mua hàng!</p>
+        </div>
+
+        <div id="statusMismatch">
+          <div class="icon">⚠️</div>
+          <h3>Số tiền không khớp</h3>
+          <p>Chúng tôi đã nhận được thanh toán nhưng số tiền không khớp với đơn hàng. Vui lòng liên hệ cửa hàng để được hỗ trợ.</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Error state -->
+    <div id="stateError">
+      <div class="icon">❌</div>
+      <h2>Không thể tải thông tin thanh toán</h2>
+      <p id="errorMessage">Đường dẫn không hợp lệ hoặc đơn hàng không tồn tại.</p>
+      <p id="errorDetail"></p>
+    </div>
+
+  </div>
+
+  <script>
+    // ── State helpers (used in Phase 4 API wiring; also callable from DevTools for testing) ──
+
+    function showLoading() {
+      document.getElementById('stateLoading').style.display = 'block';
+      document.getElementById('stateContent').style.display = 'none';
+      document.getElementById('stateError').style.display   = 'none';
+    }
+
+    function showContent({ amount, note, qrImageUrl } = {}) {
+      if (amount !== undefined)
+        document.getElementById('displayAmount').innerHTML =
+          Number(amount).toLocaleString('vi-VN') + '<span class="amount-currency">₫</span>';
+      if (note)
+        document.getElementById('displayNote').textContent = note;
+      if (qrImageUrl) {
+        const img = document.getElementById('qrImage');
+        document.querySelector('#qrWrap span').style.display = 'none';
+        img.src = qrImageUrl;
+        img.style.display = 'block';
+      }
+      document.getElementById('stateLoading').style.display = 'none';
+      document.getElementById('stateContent').style.display = 'block';
+      document.getElementById('stateError').style.display   = 'none';
+      showStatus('pending');
+    }
+
+    function showError(message, detail) {
+      document.getElementById('errorMessage').textContent = message || 'Đã xảy ra lỗi.';
+      document.getElementById('errorDetail').textContent  = detail || '';
+      document.getElementById('stateLoading').style.display = 'none';
+      document.getElementById('stateContent').style.display = 'none';
+      document.getElementById('stateError').style.display   = 'block';
+    }
+
+    function showStatus(state) {
+      // state: 'pending' | 'paid' | 'mismatch'
+      document.getElementById('statusPending').style.display  = state === 'pending'  ? 'flex' : 'none';
+      document.getElementById('statusPaid').style.display     = state === 'paid'     ? 'block' : 'none';
+      document.getElementById('statusMismatch').style.display = state === 'mismatch' ? 'block' : 'none';
+    }
+
+    // Expose on window for DevTools testing
+    window.showLoading  = showLoading;
+    window.showContent  = showContent;
+    window.showError    = showError;
+    window.showStatus   = showStatus;
+
+    // On load: check for required URL params; show loading
+    // (Phase 4 will replace this block with actual API calls)
+    (function init() {
+      const params   = new URLSearchParams(window.location.search);
+      const orderId  = params.get('order_id');
+      const amount   = params.get('amount');
+
+      if (!orderId) {
+        showError('Thiếu thông tin đơn hàng.', 'URL phải chứa tham số order_id.');
+        return;
+      }
+
+      showLoading();
+      // Phase 4 will call POST /api/payments here
+    })();
+  </script>
+</body>
+</html>
