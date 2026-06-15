@@ -97,6 +97,7 @@
     }
     .btn:hover  { background: #4f46e5; }
     .btn:active { background: #4338ca; }
+    .btn:disabled { background: #a5b4fc; cursor: not-allowed; }
 
     /* Error */
     .error-msg {
@@ -198,7 +199,12 @@
       document.getElementById(id).textContent = msg;
     }
 
-    function confirmStep1() {
+    function setLoading(btnEl, loading, defaultLabel) {
+      btnEl.disabled = loading;
+      btnEl.textContent = loading ? 'Đang xử lý...' : defaultLabel;
+    }
+
+    async function confirmStep1() {
       const domain = document.getElementById('shopDomain').value.trim();
       const token  = document.getElementById('apiToken').value.trim();
       if (!domain || !token) {
@@ -206,37 +212,161 @@
         return;
       }
       setError('error1', '');
-      document.getElementById('step1').classList.add('done');
-      document.getElementById('step2').classList.remove('locked');
+      const btn = document.querySelector('#step1 .btn');
+      setLoading(btn, true, 'Xác nhận');
+      try {
+        const res = await fetch('/api/config/haravan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shopDomain: domain, apiToken: token }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setError('error1', data.error || 'Lỗi không xác định.');
+          return;
+        }
+        document.getElementById('step1').classList.add('done');
+        document.getElementById('step2').classList.remove('locked');
+      } catch (_) {
+        setError('error1', 'Không thể kết nối tới server.');
+      } finally {
+        setLoading(btn, false, 'Xác nhận');
+      }
     }
 
-    function confirmStep2() {
-      const clientId = document.getElementById('clientId').value.trim();
-      const secret   = document.getElementById('secretToken').value.trim();
-      if (!clientId || !secret) {
-        setError('error2', 'Vui lòng nhập đầy đủ Client ID và Secret Token.');
-        return;
-      }
-      setError('error2', '');
-      // Populate dummy accounts (will be replaced by API response in Phase 4)
+    function populateAccounts(accounts) {
       const sel = document.getElementById('account');
-      sel.innerHTML =
-        '<option value="">-- Chọn tài khoản --</option>' +
-        '<option value="970436|0123456789">MB Bank — 0123456789</option>' +
-        '<option value="970422|9876543210">Techcombank — 9876543210</option>';
+      sel.innerHTML = '<option value="">-- Chọn tài khoản --</option>';
+      (accounts || []).forEach(function(acct) {
+        const opt = document.createElement('option');
+        opt.value = JSON.stringify({
+          accountNumber: acct.accountNumber,
+          bankBin: acct.bankBin,
+          bankName: acct.bankName,
+        });
+        opt.textContent = acct.bankName + ' — ' + acct.accountNumber +
+          (acct.accountName ? ' (' + acct.accountName + ')' : '');
+        sel.appendChild(opt);
+      });
       document.getElementById('step2').classList.add('done');
       document.getElementById('step3').classList.remove('locked');
     }
 
-    function confirmStep3() {
-      const account = document.getElementById('account').value;
-      if (!account) {
+    async function confirmStep2() {
+      const clientId = document.getElementById('clientId').value.trim();
+      const secret   = document.getElementById('secretToken').value.trim();
+      const alreadyConfigured = document.getElementById('step2').classList.contains('done');
+
+      if (!clientId && !secret && !alreadyConfigured) {
+        setError('error2', 'Vui lòng nhập đầy đủ Client ID và Secret Token.');
+        return;
+      }
+      setError('error2', '');
+      const btn = document.querySelector('#step2 .btn');
+      setLoading(btn, true, 'Lấy danh sách tài khoản');
+      try {
+        let data;
+        if (clientId || secret) {
+          if (!clientId || !secret) {
+            setError('error2', 'Vui lòng nhập đầy đủ Client ID và Secret Token.');
+            return;
+          }
+          const res = await fetch('/api/config/tingee', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clientId, secretToken: secret }),
+          });
+          data = await res.json();
+          if (!res.ok) { setError('error2', data.error || 'Lỗi không xác định.'); return; }
+        } else {
+          const res = await fetch('/api/config/accounts');
+          data = await res.json();
+          if (!res.ok) { setError('error2', data.error || 'Lỗi không xác định.'); return; }
+        }
+        populateAccounts(data.accounts);
+      } catch (_) {
+        setError('error2', 'Không thể kết nối tới server.');
+      } finally {
+        setLoading(btn, false, 'Lấy danh sách tài khoản');
+      }
+    }
+
+    async function restoreState() {
+      try {
+        const res = await fetch('/api/config');
+        if (!res.ok) return;
+        const { haravanConfigured, tingeeConfigured, accountSelected, shopDomain, selectedAccount } = await res.json();
+        if (haravanConfigured) {
+          if (shopDomain) document.getElementById('shopDomain').value = shopDomain;
+          document.getElementById('apiToken').placeholder = '(đã lưu — nhập lại để thay đổi)';
+          document.getElementById('step1').classList.add('done');
+          document.getElementById('step2').classList.remove('locked');
+        }
+        if (tingeeConfigured) {
+          document.getElementById('clientId').placeholder = '(đã lưu — nhập lại để thay đổi)';
+          document.getElementById('secretToken').placeholder = '(đã lưu — nhập lại để thay đổi)';
+          document.getElementById('step2').classList.add('done');
+          document.getElementById('step3').classList.remove('locked');
+          try {
+            const acctRes = await fetch('/api/config/accounts');
+            if (acctRes.ok) {
+              const acctData = await acctRes.json();
+              const sel = document.getElementById('account');
+              sel.innerHTML = '<option value="">-- Chọn tài khoản --</option>';
+              (acctData.accounts || []).forEach(function(acct) {
+                const opt = document.createElement('option');
+                opt.value = JSON.stringify({ accountNumber: acct.accountNumber, bankBin: acct.bankBin, bankName: acct.bankName });
+                opt.textContent = acct.bankName + ' — ' + acct.accountNumber +
+                  (acct.accountName ? ' (' + acct.accountName + ')' : '');
+                if (selectedAccount && acct.accountNumber === selectedAccount.accountNumber) {
+                  opt.selected = true;
+                }
+                sel.appendChild(opt);
+              });
+            }
+          } catch (_) {}
+        }
+        if (accountSelected) {
+          document.getElementById('step3').classList.add('done');
+          document.getElementById('successBanner').style.display = 'block';
+        }
+      } catch (_) {}
+    }
+
+    document.addEventListener('DOMContentLoaded', restoreState);
+
+    async function confirmStep3() {
+      const accountVal = document.getElementById('account').value;
+      if (!accountVal) {
         setError('error3', 'Vui lòng chọn tài khoản nhận tiền.');
         return;
       }
+      let acct;
+      try { acct = JSON.parse(accountVal); } catch (_) {
+        setError('error3', 'Tài khoản không hợp lệ.');
+        return;
+      }
       setError('error3', '');
-      document.getElementById('step3').classList.add('done');
-      document.getElementById('successBanner').style.display = 'block';
+      const btn = document.querySelector('#step3 .btn');
+      setLoading(btn, true, 'Hoàn tất thiết lập');
+      try {
+        const res = await fetch('/api/config/account', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(acct),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setError('error3', data.error || 'Lỗi không xác định.');
+          return;
+        }
+        document.getElementById('step3').classList.add('done');
+        document.getElementById('successBanner').style.display = 'block';
+      } catch (_) {
+        setError('error3', 'Không thể kết nối tới server.');
+      } finally {
+        setLoading(btn, false, 'Hoàn tất thiết lập');
+      }
     }
   </script>
 </body>

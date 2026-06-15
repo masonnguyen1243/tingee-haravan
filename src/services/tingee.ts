@@ -11,7 +11,7 @@ export async function getVaList(
     maxResultCount: 50,
     merchantId: 0,
     accountType: 'personal-account',
-    dataAccess: 'with-package-only',
+    dataAccess: 'referral-only',
   });
   if (res.code !== '00') {
     throw new Error(`Tingee getVaList error: ${res.code} ${res.message}`);

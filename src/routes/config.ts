@@ -1,29 +1,58 @@
 import { Router } from 'express';
 import db from '../db';
-import { encrypt } from '../utils/crypto';
+import { encrypt, decrypt } from '../utils/crypto';
 import { validateToken } from '../services/haravan';
 import { getVaList } from '../services/tingee';
 
 const router = Router();
 
 router.get('/', (_req, res) => {
-  const merchant = db.prepare('SELECT id FROM merchants LIMIT 1').get() as { id: number } | undefined;
+  const merchant = db
+    .prepare('SELECT id, shop_domain FROM merchants LIMIT 1')
+    .get() as { id: number; shop_domain: string } | undefined;
 
   const haravanConfigured = !!merchant;
   let tingeeConfigured = false;
   let accountSelected = false;
+  let shopDomain: string | null = null;
+  let selectedAccount: { accountNumber: string; bankBin: string; bankName: string } | null = null;
 
   if (merchant) {
+    shopDomain = merchant.shop_domain;
+
     const tc = db.prepare('SELECT id FROM tingee_configs WHERE merchant_id = ?').get(merchant.id);
     tingeeConfigured = !!tc;
 
     const ta = db
-      .prepare('SELECT id FROM tingee_accounts WHERE merchant_id = ? AND is_default = 1')
-      .get(merchant.id);
+      .prepare('SELECT account_number, bank_bin, bank_name FROM tingee_accounts WHERE merchant_id = ? AND is_default = 1')
+      .get(merchant.id) as { account_number: string; bank_bin: string; bank_name: string } | undefined;
     accountSelected = !!ta;
+    if (ta) {
+      selectedAccount = { accountNumber: ta.account_number, bankBin: ta.bank_bin, bankName: ta.bank_name };
+    }
   }
 
-  res.json({ haravanConfigured, tingeeConfigured, accountSelected });
+  res.json({ haravanConfigured, tingeeConfigured, accountSelected, shopDomain, selectedAccount });
+});
+
+router.get('/accounts', async (_req, res) => {
+  const merchant = db.prepare('SELECT id FROM merchants LIMIT 1').get() as { id: number } | undefined;
+  if (!merchant) return res.status(400).json({ error: 'Haravan not configured' });
+
+  const tc = db
+    .prepare('SELECT client_id_enc, secret_enc FROM tingee_configs WHERE merchant_id = ?')
+    .get(merchant.id) as { client_id_enc: string; secret_enc: string } | undefined;
+  if (!tc) return res.status(400).json({ error: 'Tingee not configured' });
+
+  const key = process.env.ENCRYPTION_KEY!;
+  try {
+    const clientId = decrypt(tc.client_id_enc, key);
+    const secretToken = decrypt(tc.secret_enc, key);
+    const accounts = await getVaList(clientId, secretToken);
+    return res.json({ accounts });
+  } catch (err) {
+    return res.status(500).json({ error: (err as Error).message });
+  }
 });
 
 router.post('/haravan', async (req, res) => {
@@ -105,7 +134,7 @@ router.post('/account', (req, res) => {
     return res.status(400).json({ error: 'Haravan not configured' });
   }
 
-  db.prepare('UPDATE tingee_accounts SET is_default = 0 WHERE merchant_id = ?').run(merchant.id);
+  db.prepare('DELETE FROM tingee_accounts WHERE merchant_id = ?').run(merchant.id);
 
   db.prepare(
     'INSERT INTO tingee_accounts (merchant_id, account_number, bank_bin, bank_name, is_default) VALUES (?, ?, ?, ?, 1)'

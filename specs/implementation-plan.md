@@ -158,9 +158,9 @@ Create all routes, mount them in `app.ts`, then wire the HTML pages to call the 
 
 **Wire `setup.html` to the API**
 
-- [ ] Step 1 button calls `POST /api/config/haravan`; on success advances to Step 2
-- [ ] Step 2 button calls `POST /api/config/tingee`; on success populates account dropdown from returned list
-- [ ] Step 3 button calls `POST /api/config/account` with selected account fields; on success shows success message
+- [x] Step 1 button calls `POST /api/config/haravan`; on success advances to Step 2
+- [x] Step 2 button calls `POST /api/config/tingee`; on success populates account dropdown from returned list
+- [x] Step 3 button calls `POST /api/config/account` with selected account fields; on success shows success message
 
 **Wire `pay.html` to the API**
 

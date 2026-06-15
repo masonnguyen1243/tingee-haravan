@@ -15,6 +15,19 @@ Format: `[version] YYYY-MM-DD — Summary`
 
 ---
 
+## [0.5.4] 2026-06-15 — Phase 4 (Wire setup.html to API): 3-step setup wizard calls real endpoints
+
+- Updated `public/setup.html` — all three steps now call real API endpoints:
+  - Step 1 "Xác nhận": `POST /api/config/haravan` with `{ shopDomain, apiToken }`; on success unlocks Step 2
+  - Step 2 "Lấy danh sách tài khoản": `POST /api/config/tingee` with `{ clientId, secretToken }`; on success populates the account `<select>` from `data.accounts` (each option stores `{ accountNumber, bankBin, bankName }` as JSON value) and unlocks Step 3
+  - Step 3 "Hoàn tất thiết lập": parses selected account JSON, calls `POST /api/config/account` with `{ accountNumber, bankBin, bankName }`; on success shows success banner
+- All buttons enter a disabled "Đang xử lý..." loading state during the fetch and are restored on completion
+- API errors (non-2xx) display `data.error` inline below the button; network failures display a generic connectivity message
+- Replaced Phase 2 dummy account options with real data from Tingee VA list
+- Added `.btn:disabled` CSS rule (light indigo, no-cursor) for visual loading feedback
+
+---
+
 ## [0.5.3] 2026-06-15 — Phase 4 (Pages router + app wiring): all routes mounted
 
 - Created `src/routes/pages.ts` — two file-serving routes:
