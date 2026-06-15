@@ -97,11 +97,11 @@ Build the database, utilities, and API services. Test each in isolation with uni
 
 **Utilities**
 
-- [ ] Create `src/utils/crypto.ts` — `encrypt(text, keyHex)` using AES-256-GCM (random IV each call); `decrypt(cipher, keyHex)` that throws on tampered input
-- [ ] Write `tests/utils/crypto.test.ts` — round-trip test, two encryptions of same input differ, tamper detection throws
-- [ ] Create `src/utils/reconcile.ts` — `generateReconcileCode()` returns `TG` followed by 7 random uppercase alphanumeric characters using `node:crypto`
-- [ ] Write `tests/utils/reconcile.test.ts` — format matches `TG[A-Z0-9]{7}`; 1000 generated codes are all unique
-- [ ] Verify: `npm test tests/utils` passes
+- [x] Create `src/utils/crypto.ts` — `encrypt(text, keyHex)` using AES-256-GCM (random IV each call); `decrypt(cipher, keyHex)` that throws on tampered input
+- [x] Write `tests/utils/crypto.test.ts` — round-trip test, two encryptions of same input differ, tamper detection throws
+- [x] Create `src/utils/reconcile.ts` — `generateReconcileCode()` returns `TG` followed by 7 random uppercase alphanumeric characters using `node:crypto`
+- [x] Write `tests/utils/reconcile.test.ts` — format matches `TG[A-Z0-9]{7}`; 1000 generated codes are all unique
+- [x] Verify: `npm test tests/utils` passes
 
 **Services**
 

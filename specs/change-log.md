@@ -15,6 +15,18 @@ Format: `[version] YYYY-MM-DD — Summary`
 
 ---
 
+## [0.4.1] 2026-06-15 — Phase 3 (Utilities): crypto and reconcile code
+
+- Created `src/utils/crypto.ts` — AES-256-GCM encryption helpers
+  - `encrypt(text, keyHex)`: random 12-byte IV each call, returns `iv:tag:ciphertext` (all hex)
+  - `decrypt(cipher, keyHex)`: verifies auth tag; throws on tampered data or wrong key
+- Created `src/utils/reconcile.ts` — `generateReconcileCode()` returns `TG` + 7 random uppercase alphanumeric characters via `node:crypto`
+- Created `tests/utils/crypto.test.ts` — 6 tests: round-trip, random IV, wrong key, tampered ciphertext, tampered tag, invalid format
+- Created `tests/utils/reconcile.test.ts` — 3 tests: format regex, length 9, 1000 codes all unique
+- Verified: `npm test tests/utils` → 9/9 tests pass
+
+---
+
 ## [0.4.0] 2026-06-15 — Phase 3 (Database): Schema and DB connection
 
 - Created `src/db/schema.ts` — `SQL_CREATE_TABLES` constant with `CREATE TABLE IF NOT EXISTS` for all 5 tables: `merchants`, `tingee_configs`, `tingee_accounts`, `payments`, `webhook_events`
