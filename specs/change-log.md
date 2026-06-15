@@ -15,6 +15,17 @@ Format: `[version] YYYY-MM-DD — Summary`
 
 ---
 
+## [0.4.0] 2026-06-15 — Phase 3 (Database): Schema and DB connection
+
+- Created `src/db/schema.ts` — `SQL_CREATE_TABLES` constant with `CREATE TABLE IF NOT EXISTS` for all 5 tables: `merchants`, `tingee_configs`, `tingee_accounts`, `payments`, `webhook_events`
+  - `payments.reconcile_code` has a UNIQUE constraint
+  - `tingee_configs` and `payments` have foreign keys referencing `merchants(id)`
+- Created `src/db/index.ts` — opens `better-sqlite3` at `DB_PATH`, enables WAL mode and foreign keys, runs schema on startup, exports `db` singleton
+- Created `tests/db/schema.test.ts` — 4 passing tests: all 5 tables exist, UNIQUE constraint on `reconcile_code`, idempotent double-init, FK enforcement on `tingee_configs`
+- Verified: `npm test tests/db` → 4/4 tests pass
+
+---
+
 ## [0.3.0] 2026-06-15 — Phase 2: Core UI
 
 - Created `public/setup.html` — 3-step merchant config wizard (Haravan → Tingee → Account)

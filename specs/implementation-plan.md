@@ -55,7 +55,7 @@ tsconfig.json
 - [x] Create `src/app.ts` — Express instance, JSON middleware, static `/public` serving, `GET /health` returning `{ status: "ok" }`
 - [x] Create `src/server.ts` — loads `.env`, imports `app.ts`, calls `app.listen(PORT)`
 - [x] Verify: `npm run dev` starts without errors; `curl localhost:3000/health` returns `{"status":"ok"}`
-- [ ] Commit: `feat: project bootstrap`
+- [x] Commit: `feat: project bootstrap`
 
 ---
 
@@ -90,10 +90,10 @@ Build the database, utilities, and API services. Test each in isolation with uni
 
 **Database**
 
-- [ ] Create `src/db/schema.ts` — SQL `CREATE TABLE IF NOT EXISTS` statements for all 5 tables: `merchants`, `tingee_configs`, `tingee_accounts`, `payments`, `webhook_events` (see data model in `specs/product-spec.md`)
-- [ ] Create `src/db/index.ts` — opens `better-sqlite3` connection to `DB_PATH`, enables WAL mode and foreign keys, runs schema on startup, exports the `db` singleton
-- [ ] Write `tests/db/schema.test.ts` — verify all 5 tables exist after init; verify `payments.reconcile_code` has UNIQUE constraint
-- [ ] Verify: `npm test tests/db` passes
+- [x] Create `src/db/schema.ts` — SQL `CREATE TABLE IF NOT EXISTS` statements for all 5 tables: `merchants`, `tingee_configs`, `tingee_accounts`, `payments`, `webhook_events` (see data model in `specs/product-spec.md`)
+- [x] Create `src/db/index.ts` — opens `better-sqlite3` connection to `DB_PATH`, enables WAL mode and foreign keys, runs schema on startup, exports the `db` singleton
+- [x] Write `tests/db/schema.test.ts` — verify all 5 tables exist after init; verify `payments.reconcile_code` has UNIQUE constraint
+- [x] Verify: `npm test tests/db` passes
 
 **Utilities**
 
