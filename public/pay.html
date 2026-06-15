@@ -242,12 +242,29 @@
     window.showError    = showError;
     window.showStatus   = showStatus;
 
-    // On load: check for required URL params; show loading
-    // (Phase 4 will replace this block with actual API calls)
-    (function init() {
-      const params   = new URLSearchParams(window.location.search);
-      const orderId  = params.get('order_id');
-      const amount   = params.get('amount');
+    let pollTimer = null;
+
+    function startPolling(reconcileCode) {
+      pollTimer = setInterval(async () => {
+        try {
+          const res  = await fetch('/api/payments/' + reconcileCode + '/status');
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data.status === 'paid') {
+            clearInterval(pollTimer);
+            showStatus('paid');
+          } else if (data.status === 'mismatch') {
+            clearInterval(pollTimer);
+            showStatus('mismatch');
+          }
+        } catch (_) { /* network hiccup — keep polling */ }
+      }, 3000);
+    }
+
+    (async function init() {
+      const params  = new URLSearchParams(window.location.search);
+      const orderId = params.get('order_id');
+      const amount  = params.get('amount');
 
       if (!orderId) {
         showError('Thiếu thông tin đơn hàng.', 'URL phải chứa tham số order_id.');
@@ -255,7 +272,37 @@
       }
 
       showLoading();
-      // Phase 4 will call POST /api/payments here
+
+      try {
+        const body = { orderId };
+        if (amount) body.amount = Number(amount);
+
+        const res  = await fetch('/api/payments', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(body),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          showError(
+            'Không thể tạo mã thanh toán.',
+            data.error || ('Lỗi ' + res.status)
+          );
+          return;
+        }
+
+        showContent({
+          amount:     amount || data.amount,
+          note:       data.reconcileCode,
+          qrImageUrl: data.qrCodeImage,
+        });
+
+        startPolling(data.reconcileCode);
+      } catch (err) {
+        showError('Không thể kết nối đến máy chủ.', err.message);
+      }
     })();
   </script>
 </body>

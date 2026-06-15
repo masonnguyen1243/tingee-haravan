@@ -15,6 +15,20 @@ Format: `[version] YYYY-MM-DD — Summary`
 
 ---
 
+## [0.5.5] 2026-06-15 — Phase 4 (Wire pay.html to API): customer payment page calls real endpoints
+
+- Updated `public/pay.html` — `init()` now calls real API and polls for status:
+  - On load: reads `order_id` (required) and `amount` (optional) from URL params; calls `POST /api/payments` with `{ orderId, amount }`
+  - On success: calls `showContent({ amount, note: reconcileCode, qrImageUrl: qrCodeImage })` to display QR and transfer note; hides loading state
+  - On API error (non-2xx): calls `showError()` with `data.error` message
+  - On network failure: calls `showError()` with the caught error message
+  - Starts `startPolling(reconcileCode)` — calls `GET /api/payments/:code/status` every 3 seconds
+  - On `paid` status: calls `showStatus('paid')` and clears the interval
+  - On `mismatch` status: calls `showStatus('mismatch')` and clears the interval
+  - Network hiccups during polling are silently ignored (interval continues)
+
+---
+
 ## [0.5.4] 2026-06-15 — Phase 4 (Wire setup.html to API): 3-step setup wizard calls real endpoints
 
 - Updated `public/setup.html` — all three steps now call real API endpoints:

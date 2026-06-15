@@ -164,10 +164,10 @@ Create all routes, mount them in `app.ts`, then wire the HTML pages to call the 
 
 **Wire `pay.html` to the API**
 
-- [ ] On load: read `order_id` and `amount` from URL params; call `POST /api/payments`; display returned `qrCodeImage` and `reconcileCode`; hide loading state
-- [ ] Poll `GET /api/payments/:code/status` every 3 seconds
-- [ ] On `paid`: show success message, stop polling
-- [ ] On `mismatch`: show warning message, stop polling
+- [x] On load: read `order_id` and `amount` from URL params; call `POST /api/payments`; display returned `qrCodeImage` and `reconcileCode`; hide loading state
+- [x] Poll `GET /api/payments/:code/status` every 3 seconds
+- [x] On `paid`: show success message, stop polling
+- [x] On `mismatch`: show warning message, stop polling
 
 ---
 
