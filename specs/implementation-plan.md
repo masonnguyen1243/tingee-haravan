@@ -148,13 +148,13 @@ Create all routes, mount them in `app.ts`, then wire the HTML pages to call the 
 
 **Pages router — `src/routes/pages.ts`**
 
-- [ ] `GET /` → serve `public/setup.html`
-- [ ] `GET /pay` → serve `public/pay.html`
+- [x] `GET /` → serve `public/setup.html`
+- [x] `GET /pay` → serve `public/pay.html`
 
 **Mount all routers in `src/app.ts`**
 
-- [ ] Add `configRouter`, `paymentRouter`, `webhookRouter`, `pagesRouter` to `app.ts`
-- [ ] Verify: `npm test` passes for all route tests
+- [x] Add `configRouter`, `paymentRouter`, `webhookRouter`, `pagesRouter` to `app.ts`
+- [x] Verify: `npm test` passes for all route tests
 
 **Wire `setup.html` to the API**
 

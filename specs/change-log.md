@@ -15,6 +15,20 @@ Format: `[version] YYYY-MM-DD — Summary`
 
 ---
 
+## [0.5.3] 2026-06-15 — Phase 4 (Pages router + app wiring): all routes mounted
+
+- Created `src/routes/pages.ts` — two file-serving routes:
+  - `GET /` → `public/setup.html`
+  - `GET /pay` → `public/pay.html`
+- Updated `src/app.ts` — mounted all four routers:
+  - `/api/config` → `configRouter`
+  - `/api/payments` → `paymentRouter`
+  - `/webhook/tingee` → `webhookRouter`
+  - `/` → `pagesRouter`
+- Verified: `npm test` → 70/70 tests pass across 8 test suites
+
+---
+
 ## [0.5.2] 2026-06-15 — Phase 4 (Webhook handler): Tingee IPN receiver with signature verification
 
 - Created `src/routes/webhook.ts` — `POST /webhook/tingee` handler:
