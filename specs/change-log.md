@@ -15,6 +15,27 @@ Format: `[version] YYYY-MM-DD — Summary`
 
 ---
 
+## [0.5.2] 2026-06-15 — Phase 4 (Webhook handler): Tingee IPN receiver with signature verification
+
+- Created `src/routes/webhook.ts` — `POST /webhook/tingee` handler:
+  - Reads `x-request-timestamp` and `x-signature` headers
+  - Verifies `HMAC-SHA512(timestamp + ":" + JSON.stringify(body), secretToken)` using decrypted Tingee secret; logs invalid events (signature_valid=0) and returns `200 {code:"00"}` silently
+  - Deduplicates by `transactionCode` against valid events in `webhook_events` — prevents double-processing
+  - Extracts reconcile code from `content` using `/TG[A-Z0-9]+/` regex; looks up matching payment
+  - Amount mismatch → sets `payments.status = 'mismatch'`, logs event, returns `200 {code:"00"}`
+  - Amount match → calls `haravan.markOrderPaid`, atomically updates `payments.status = 'paid'` + inserts `webhook_events` with `matched_payment_id` in a SQLite transaction, returns `200 {code:"00", message:"Success"}`
+- Created `tests/routes/webhook.test.ts` — 13 tests:
+  - Valid signature + match: marks paid, updates paid_at, logs with matched_payment_id
+  - Invalid signature: returns 200, logs signature_valid=0, does not modify payment
+  - Missing signature header: treated as invalid
+  - Duplicate transactionCode: ignores replay, does not call markOrderPaid twice, no duplicate log entry
+  - Amount mismatch: sets mismatch status, does not call markOrderPaid, logs without matched_payment_id
+  - No reconcile code in content / code not in DB: returns 200 without side-effects
+- Fixed afterEach delete order: `webhook_events` must be deleted before `payments` (FK constraint)
+- Verified: `npm test tests/routes/webhook.test.ts` → 13/13 tests pass
+
+---
+
 ## [0.5.1] 2026-06-15 — Phase 4 (Payment routes): QR payment creation and status polling
 
 - Created `src/routes/payment.ts` — two endpoints:

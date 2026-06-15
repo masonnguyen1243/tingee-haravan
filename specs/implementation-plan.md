@@ -138,13 +138,13 @@ Create all routes, mount them in `app.ts`, then wire the HTML pages to call the 
 
 **Webhook handler — `src/routes/webhook.ts`**
 
-- [ ] Receive `POST /webhook/tingee`; read `x-request-timestamp` and `x-signature` from headers
-- [ ] Verify signature: `HMAC-SHA512(timestamp + ":" + JSON.stringify(body), secretToken)`; if invalid, log to `webhook_events` and return `200 { code: "00" }` immediately
-- [ ] Check `webhook_events` for duplicate `transactionCode`; if seen, return 200 immediately
-- [ ] Extract reconcile code from `content` field using pattern `TG[A-Z0-9]+`; look up in `payments`
-- [ ] If not found or amount mismatch: log event, update payment status to `mismatch` if needed, return 200
-- [ ] If match: call `haravan.markOrderPaid`, update `payments.status` to `paid`, log `webhook_events` with `matched_payment_id`; return `200 { code: "00", message: "Success" }`
-- [ ] Write `tests/routes/webhook.test.ts` — test valid signature + match, invalid signature, duplicate, amount mismatch
+- [x] Receive `POST /webhook/tingee`; read `x-request-timestamp` and `x-signature` from headers
+- [x] Verify signature: `HMAC-SHA512(timestamp + ":" + JSON.stringify(body), secretToken)`; if invalid, log to `webhook_events` and return `200 { code: "00" }` immediately
+- [x] Check `webhook_events` for duplicate `transactionCode`; if seen, return 200 immediately
+- [x] Extract reconcile code from `content` field using pattern `TG[A-Z0-9]+`; look up in `payments`
+- [x] If not found or amount mismatch: log event, update payment status to `mismatch` if needed, return 200
+- [x] If match: call `haravan.markOrderPaid`, update `payments.status` to `paid`, log `webhook_events` with `matched_payment_id`; return `200 { code: "00", message: "Success" }`
+- [x] Write `tests/routes/webhook.test.ts` — test valid signature + match, invalid signature, duplicate, amount mismatch
 
 **Pages router — `src/routes/pages.ts`**
 
