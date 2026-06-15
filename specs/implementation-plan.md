@@ -124,11 +124,11 @@ Create all routes, mount them in `app.ts`, then wire the HTML pages to call the 
 
 **Config routes — `src/routes/config.ts`**
 
-- [ ] `GET /api/config` — returns `{ haravanConfigured, tingeeConfigured, accountSelected }` as booleans; never returns raw tokens
-- [ ] `POST /api/config/haravan` — calls `haravan.validateToken`, encrypts token with `crypto.ts`, upserts into `merchants`; returns `{ ok: true }`
-- [ ] `POST /api/config/tingee` — calls `tingee.getVaList`, encrypts secret, upserts into `tingee_configs`; returns `{ accounts: [...] }`
-- [ ] `POST /api/config/account` — clears existing default, inserts selected account into `tingee_accounts` with `is_default = 1`; returns `{ ok: true }`
-- [ ] Write `tests/routes/config.test.ts` using Supertest + `:memory:` SQLite; mock `haravan` and `tingee` services; test full setup flow and `GET /api/config` before and after
+- [x] `GET /api/config` — returns `{ haravanConfigured, tingeeConfigured, accountSelected }` as booleans; never returns raw tokens
+- [x] `POST /api/config/haravan` — calls `haravan.validateToken`, encrypts token with `crypto.ts`, upserts into `merchants`; returns `{ ok: true }`
+- [x] `POST /api/config/tingee` — calls `tingee.getVaList`, encrypts secret, upserts into `tingee_configs`; returns `{ accounts: [...] }`
+- [x] `POST /api/config/account` — clears existing default, inserts selected account into `tingee_accounts` with `is_default = 1`; returns `{ ok: true }`
+- [x] Write `tests/routes/config.test.ts` using Supertest + `:memory:` SQLite; mock `haravan` and `tingee` services; test full setup flow and `GET /api/config` before and after
 
 **Payment routes — `src/routes/payment.ts`**
 

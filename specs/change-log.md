@@ -15,6 +15,23 @@ Format: `[version] YYYY-MM-DD — Summary`
 
 ---
 
+## [0.5.0] 2026-06-15 — Phase 4 (Config routes): merchant and Tingee configuration API
+
+- Created `src/routes/config.ts` — four endpoints:
+  - `GET /api/config` → `{ haravanConfigured, tingeeConfigured, accountSelected }` (booleans only, no raw tokens)
+  - `POST /api/config/haravan` → validates token via Haravan, encrypts with AES-256-GCM, upserts `merchants`; returns `{ ok: true }`
+  - `POST /api/config/tingee` → fetches VA list via Tingee SDK, encrypts credentials, upserts `tingee_configs`; returns `{ accounts: [...] }`
+  - `POST /api/config/account` → clears existing default in `tingee_accounts`, inserts new row with `is_default = 1`; returns `{ ok: true }`
+- Created `tests/routes/config.test.ts` — 19 tests using Supertest + in-memory SQLite:
+  - `GET /api/config` before/after each step, raw token exclusion check
+  - `POST /api/config/haravan`: happy path, upsert idempotency, 401 rejection, missing fields
+  - `POST /api/config/tingee`: happy path, DB persistence, update-on-second-call, SDK error, missing fields
+  - `POST /api/config/account`: insert, default-clearing, missing fields
+  - Full 3-step setup flow verifying config state after each step
+- Verified: `npm test tests/routes/config.test.ts` → 19/19 tests pass
+
+---
+
 ## [0.4.2] 2026-06-15 — Phase 3 (Services): Haravan and Tingee API wrappers
 
 - Created `src/services/haravan.ts` — three functions using Node built-in `fetch`:
