@@ -4,7 +4,7 @@
 
 **Architecture:** Express.js API + static HTML pages; SQLite for persistence; `@tingee/sdk-node` for all Tingee calls; AES-256-GCM for token encryption at rest. No OAuth — merchants supply their own Haravan Private App token.
 
-**Tech Stack:** Node.js 20 LTS, Express, better-sqlite3, @tingee/sdk-node, Jest, Supertest
+**Tech Stack:** Node.js 20 LTS, Express, TypeScript 5, better-sqlite3, @tingee/sdk-node, Jest + ts-jest, Supertest, tsx (dev runner)
 
 ---
 
@@ -12,47 +12,49 @@
 
 ```
 src/
-  app.js              Express app setup — mounts all routes, serves /public
-  server.js           Entry point — loads .env and starts the HTTP server
+  app.ts              Express app setup — mounts all routes, serves /public
+  server.ts           Entry point — loads .env and starts the HTTP server
   db/
-    schema.js         SQL CREATE TABLE statements for all 5 tables
-    index.js          Opens SQLite connection, runs schema on startup, exports db
+    schema.ts         SQL CREATE TABLE statements for all 5 tables
+    index.ts          Opens SQLite connection, runs schema on startup, exports db
   services/
-    haravan.js        validateToken, getOrder, markOrderPaid
-    tingee.js         getVaList, generateQR (always via @tingee/sdk-node)
+    haravan.ts        validateToken, getOrder, markOrderPaid
+    tingee.ts         getVaList, generateQR (always via @tingee/sdk-node)
   routes/
-    config.js         /api/config/** — merchant setup endpoints
-    payment.js        /api/payments — create payment, poll status
-    webhook.js        /webhook/tingee — Tingee IPN receiver
-    pages.js          GET / and GET /pay — serve HTML pages
+    config.ts         /api/config/** — merchant setup endpoints
+    payment.ts        /api/payments — create payment, poll status
+    webhook.ts        /webhook/tingee — Tingee IPN receiver
+    pages.ts          GET / and GET /pay — serve HTML pages
   utils/
-    crypto.js         encrypt(text, keyHex) and decrypt(cipher, keyHex)
-    reconcile.js      generateReconcileCode() — returns TG + 7 alphanumeric chars
+    crypto.ts         encrypt(text, keyHex) and decrypt(cipher, keyHex)
+    reconcile.ts      generateReconcileCode() — returns TG + 7 alphanumeric chars
 public/
   setup.html          Merchant 3-step configuration wizard
   pay.html            Customer QR payment page
 tests/
-  utils/              crypto.test.js, reconcile.test.js
-  services/           haravan.test.js, tingee.test.js
-  routes/             config.test.js, payment.test.js, webhook.test.js
+  utils/              crypto.test.ts, reconcile.test.ts
+  services/           haravan.test.ts, tingee.test.ts
+  routes/             config.test.ts, payment.test.ts, webhook.test.ts
 .env.example
 package.json
+tsconfig.json
 ```
 
 ---
 
 ## Phase 1: Project Setup
 
-- [ ] Initialise git repository
-- [ ] Create `package.json` with scripts: `start`, `dev` (node --watch), `test` (jest --runInBand)
-- [ ] Add dependencies: `express`, `better-sqlite3`, `@tingee/sdk-node`, `dotenv`
-- [ ] Add dev dependencies: `jest`, `supertest`
-- [ ] Run `npm install`
-- [ ] Create `.env.example` with `PORT`, `DB_PATH`, `ENCRYPTION_KEY`, `NODE_ENV`
-- [ ] Create the full folder structure: `src/db/`, `src/services/`, `src/routes/`, `src/utils/`, `public/`, `tests/utils/`, `tests/services/`, `tests/routes/`
-- [ ] Create `src/app.js` — Express instance, JSON middleware, static `/public` serving, `GET /health` returning `{ status: "ok" }`
-- [ ] Create `src/server.js` — loads `.env`, imports `app.js`, calls `app.listen(PORT)`
-- [ ] Verify: `npm run dev` starts without errors; `curl localhost:3000/health` returns `{"status":"ok"}`
+- [x] Initialise git repository
+- [x] Create `package.json` with scripts: `start`, `build` (tsc), `dev` (tsx watch), `test` (jest --runInBand)
+- [x] Add dependencies: `express`, `better-sqlite3`, `@tingee/sdk-node`, `dotenv`
+- [x] Add dev dependencies: `typescript`, `tsx`, `ts-jest`, `jest`, `supertest`, `@types/node`, `@types/express`, `@types/better-sqlite3`, `@types/jest`, `@types/supertest`
+- [x] Run `npm install`
+- [x] Create `.env.example` with `PORT`, `DB_PATH`, `ENCRYPTION_KEY`, `NODE_ENV`
+- [x] Create `tsconfig.json` — target ES2022, CommonJS, outDir dist/
+- [x] Create the full folder structure: `src/db/`, `src/services/`, `src/routes/`, `src/utils/`, `public/`, `tests/utils/`, `tests/services/`, `tests/routes/`, `tests/db/`
+- [x] Create `src/app.ts` — Express instance, JSON middleware, static `/public` serving, `GET /health` returning `{ status: "ok" }`
+- [x] Create `src/server.ts` — loads `.env`, imports `app.ts`, calls `app.listen(PORT)`
+- [x] Verify: `npm run dev` starts without errors; `curl localhost:3000/health` returns `{"status":"ok"}`
 - [ ] Commit: `feat: project bootstrap`
 
 ---
@@ -88,53 +90,53 @@ Build the database, utilities, and API services. Test each in isolation with uni
 
 **Database**
 
-- [ ] Create `src/db/schema.js` — SQL `CREATE TABLE IF NOT EXISTS` statements for all 5 tables: `merchants`, `tingee_configs`, `tingee_accounts`, `payments`, `webhook_events` (see data model in `specs/product-spec.md`)
-- [ ] Create `src/db/index.js` — opens `better-sqlite3` connection to `DB_PATH`, enables WAL mode and foreign keys, runs schema on startup, exports the `db` singleton
-- [ ] Write `tests/db/schema.test.js` — verify all 5 tables exist after init; verify `payments.reconcile_code` has UNIQUE constraint
+- [ ] Create `src/db/schema.ts` — SQL `CREATE TABLE IF NOT EXISTS` statements for all 5 tables: `merchants`, `tingee_configs`, `tingee_accounts`, `payments`, `webhook_events` (see data model in `specs/product-spec.md`)
+- [ ] Create `src/db/index.ts` — opens `better-sqlite3` connection to `DB_PATH`, enables WAL mode and foreign keys, runs schema on startup, exports the `db` singleton
+- [ ] Write `tests/db/schema.test.ts` — verify all 5 tables exist after init; verify `payments.reconcile_code` has UNIQUE constraint
 - [ ] Verify: `npm test tests/db` passes
 
 **Utilities**
 
-- [ ] Create `src/utils/crypto.js` — `encrypt(text, keyHex)` using AES-256-GCM (random IV each call); `decrypt(cipher, keyHex)` that throws on tampered input
-- [ ] Write `tests/utils/crypto.test.js` — round-trip test, two encryptions of same input differ, tamper detection throws
-- [ ] Create `src/utils/reconcile.js` — `generateReconcileCode()` returns `TG` followed by 7 random uppercase alphanumeric characters using `node:crypto`
-- [ ] Write `tests/utils/reconcile.test.js` — format matches `TG[A-Z0-9]{7}`; 1000 generated codes are all unique
+- [ ] Create `src/utils/crypto.ts` — `encrypt(text, keyHex)` using AES-256-GCM (random IV each call); `decrypt(cipher, keyHex)` that throws on tampered input
+- [ ] Write `tests/utils/crypto.test.ts` — round-trip test, two encryptions of same input differ, tamper detection throws
+- [ ] Create `src/utils/reconcile.ts` — `generateReconcileCode()` returns `TG` followed by 7 random uppercase alphanumeric characters using `node:crypto`
+- [ ] Write `tests/utils/reconcile.test.ts` — format matches `TG[A-Z0-9]{7}`; 1000 generated codes are all unique
 - [ ] Verify: `npm test tests/utils` passes
 
 **Services**
 
-- [ ] Create `src/services/haravan.js` with three functions:
+- [ ] Create `src/services/haravan.ts` with three functions:
   - `validateToken(token)` — `GET /com/shop.json` with Bearer auth; throws on non-200
   - `getOrder(token, orderId)` — `GET /com/orders/{id}.json`; throws on non-200
   - `markOrderPaid(token, orderId, amount)` — `POST /com/orders/{id}/transactions.json` with body `{ transaction: { kind: "Capture", amount } }`; throws on non-200
-- [ ] Write `tests/services/haravan.test.js` — mock global `fetch`; test happy path and error path for each function; verify request URL and body shape
-- [ ] Create `src/services/tingee.js` with two functions:
+- [ ] Write `tests/services/haravan.test.ts` — mock global `fetch`; test happy path and error path for each function; verify request URL and body shape
+- [ ] Create `src/services/tingee.ts` with two functions:
   - `getVaList(clientId, secretToken)` — calls `@tingee/sdk-node` to `POST /v1/get-va-paging`; throws if response code is not `"00"`
   - `generateQR(clientId, secretToken, { bankBin, accountNumber, amount, content })` — calls `@tingee/sdk-node` to `POST /v1/generate-viet-qr`; returns `{ qrCode, qrCodeImage }`; throws on non-`"00"`
-- [ ] Write `tests/services/tingee.test.js` — mock `@tingee/sdk-node`; verify `getVaList` returns items; verify `generateQR` passes correct fields including `content`; verify both throw on error codes
+- [ ] Write `tests/services/tingee.test.ts` — mock `@tingee/sdk-node`; verify `getVaList` returns items; verify `generateQR` passes correct fields including `content`; verify both throw on error codes
 - [ ] Verify: `npm test tests/services` passes
 
 ---
 
 ## Phase 4: Connect UI to Data
 
-Create all routes, mount them in `app.js`, then wire the HTML pages to call the API.
+Create all routes, mount them in `app.ts`, then wire the HTML pages to call the API.
 
-**Config routes — `src/routes/config.js`**
+**Config routes — `src/routes/config.ts`**
 
 - [ ] `GET /api/config` — returns `{ haravanConfigured, tingeeConfigured, accountSelected }` as booleans; never returns raw tokens
-- [ ] `POST /api/config/haravan` — calls `haravan.validateToken`, encrypts token with `crypto.js`, upserts into `merchants`; returns `{ ok: true }`
+- [ ] `POST /api/config/haravan` — calls `haravan.validateToken`, encrypts token with `crypto.ts`, upserts into `merchants`; returns `{ ok: true }`
 - [ ] `POST /api/config/tingee` — calls `tingee.getVaList`, encrypts secret, upserts into `tingee_configs`; returns `{ accounts: [...] }`
 - [ ] `POST /api/config/account` — clears existing default, inserts selected account into `tingee_accounts` with `is_default = 1`; returns `{ ok: true }`
-- [ ] Write `tests/routes/config.test.js` using Supertest + `:memory:` SQLite; mock `haravan` and `tingee` services; test full setup flow and `GET /api/config` before and after
+- [ ] Write `tests/routes/config.test.ts` using Supertest + `:memory:` SQLite; mock `haravan` and `tingee` services; test full setup flow and `GET /api/config` before and after
 
-**Payment routes — `src/routes/payment.js`**
+**Payment routes — `src/routes/payment.ts`**
 
 - [ ] `POST /api/payments` — reads merchant + config + default account from DB; if a pending payment already exists for the same `orderId`, return it; otherwise generate a reconcile code, call `tingee.generateQR`, save to `payments`; returns `{ reconcileCode, qrCodeImage, status }`
 - [ ] `GET /api/payments/:code/status` — looks up payment by reconcile code; returns `{ status, amount, paid_at }` or 404
-- [ ] Write `tests/routes/payment.test.js` — test create, idempotency for same orderId, status poll, 404 for unknown code
+- [ ] Write `tests/routes/payment.test.ts` — test create, idempotency for same orderId, status poll, 404 for unknown code
 
-**Webhook handler — `src/routes/webhook.js`**
+**Webhook handler — `src/routes/webhook.ts`**
 
 - [ ] Receive `POST /webhook/tingee`; read `x-request-timestamp` and `x-signature` from headers
 - [ ] Verify signature: `HMAC-SHA512(timestamp + ":" + JSON.stringify(body), secretToken)`; if invalid, log to `webhook_events` and return `200 { code: "00" }` immediately
@@ -142,16 +144,16 @@ Create all routes, mount them in `app.js`, then wire the HTML pages to call the 
 - [ ] Extract reconcile code from `content` field using pattern `TG[A-Z0-9]+`; look up in `payments`
 - [ ] If not found or amount mismatch: log event, update payment status to `mismatch` if needed, return 200
 - [ ] If match: call `haravan.markOrderPaid`, update `payments.status` to `paid`, log `webhook_events` with `matched_payment_id`; return `200 { code: "00", message: "Success" }`
-- [ ] Write `tests/routes/webhook.test.js` — test valid signature + match, invalid signature, duplicate, amount mismatch
+- [ ] Write `tests/routes/webhook.test.ts` — test valid signature + match, invalid signature, duplicate, amount mismatch
 
-**Pages router — `src/routes/pages.js`**
+**Pages router — `src/routes/pages.ts`**
 
 - [ ] `GET /` → serve `public/setup.html`
 - [ ] `GET /pay` → serve `public/pay.html`
 
-**Mount all routers in `src/app.js`**
+**Mount all routers in `src/app.ts`**
 
-- [ ] Add `configRouter`, `paymentRouter`, `webhookRouter`, `pagesRouter` to `app.js`
+- [ ] Add `configRouter`, `paymentRouter`, `webhookRouter`, `pagesRouter` to `app.ts`
 - [ ] Verify: `npm test` passes for all route tests
 
 **Wire `setup.html` to the API**

@@ -8,10 +8,11 @@ Architecture model: **Private App + static API token** (not OAuth). Merchants ma
 
 ## Tech Stack
 
-- **Node.js 20 LTS** + **Express.js**
+- **Node.js 20 LTS** + **Express.js** + **TypeScript 5**
 - **better-sqlite3** for synchronous SQLite (dev). Production uses PostgreSQL via `pg`.
 - **@tingee/sdk-node** for all Tingee API calls — never hand-roll HMAC signing
-- **Jest + Supertest** for all tests
+- **Jest + ts-jest + Supertest** for all tests
+- **tsx** for local dev (`npm run dev`) — no compile step needed in development
 - **Node built-in `fetch`** (no axios/node-fetch needed)
 
 ## Running the Project
@@ -25,13 +26,13 @@ npm test                # run test suite
 
 ## Critical Rules — Never Break These
 
-1. **Never reuse a reconcile code.** Each `payments` row gets one unique `reconcile_code`. `reconcile.js` generates them; do not bypass it.
+1. **Never reuse a reconcile code.** Each `payments` row gets one unique `reconcile_code`. `reconcile.ts` generates them; do not bypass it.
 
-2. **Always verify Tingee webhook signatures.** `webhook.js` must verify `x-signature = HMAC_SHA512(timestamp + ":" + JSON.stringify(body), secretToken)` before processing any IPN. Reject silently (return 200 `{code:"00"}`) on mismatch to prevent retry storms.
+2. **Always verify Tingee webhook signatures.** `webhook.ts` must verify `x-signature = HMAC_SHA512(timestamp + ":" + JSON.stringify(body), secretToken)` before processing any IPN. Reject silently (return 200 `{code:"00"}`) on mismatch to prevent retry storms.
 
 3. **Idempotency on `transactionCode`.** Check `webhook_events` for the `tingee_transaction_code` before processing. If already seen, return 200 immediately.
 
-4. **Never log API tokens or Secret Tokens.** These are encrypted at rest using `crypto.js`. Only decrypt immediately before use.
+4. **Never log API tokens or Secret Tokens.** These are encrypted at rest using `crypto.ts`. Only decrypt immediately before use.
 
 5. **Only mark an order paid when both reconcile code AND amount match.** Amount mismatch → set `status = 'mismatch'`, do not call Haravan.
 
@@ -41,26 +42,27 @@ npm test                # run test suite
 
 ```
 src/
-  app.js          Express setup: mounts all routes, parses JSON, serves /public
-  server.js       Calls app.js and listens on PORT — only file that starts the server
+  app.ts          Express setup: mounts all routes, parses JSON, serves /public
+  server.ts       Calls app.ts and listens on PORT — only file that starts the server
   db/
-    schema.js     All CREATE TABLE IF NOT EXISTS statements (run on startup)
-    index.js      Opens better-sqlite3 connection, runs schema.js, exports db
+    schema.ts     All CREATE TABLE IF NOT EXISTS statements (run on startup)
+    index.ts      Opens better-sqlite3 connection, runs schema.ts, exports db
   services/
-    haravan.js    validateToken(token), getOrder(token, orderId), markOrderPaid(token, orderId, amount)
-    tingee.js     getVaList(clientId, secretToken), generateQR(clientId, secretToken, opts)
+    haravan.ts    validateToken(token), getOrder(token, orderId), markOrderPaid(token, orderId, amount)
+    tingee.ts     getVaList(clientId, secretToken), generateQR(clientId, secretToken, opts)
   routes/
-    config.js     POST /api/config/haravan, POST /api/config/tingee, POST /api/config/account, GET /api/config
-    payment.js    POST /api/payments, GET /api/payments/:reconcileCode/status
-    webhook.js    POST /webhook/tingee
-    pages.js      GET / (setup page), GET /pay (QR payment page)
+    config.ts     POST /api/config/haravan, POST /api/config/tingee, POST /api/config/account, GET /api/config
+    payment.ts    POST /api/payments, GET /api/payments/:reconcileCode/status
+    webhook.ts    POST /webhook/tingee
+    pages.ts      GET / (setup page), GET /pay (QR payment page)
   utils/
-    crypto.js     encrypt(text, keyHex), decrypt(cipher, keyHex) — AES-256-GCM
-    reconcile.js  generateReconcileCode() — returns "TG" + 7 alphanumeric chars
+    crypto.ts     encrypt(text, keyHex), decrypt(cipher, keyHex) — AES-256-GCM
+    reconcile.ts  generateReconcileCode() — returns "TG" + 7 alphanumeric chars
 public/
   setup.html      Multi-step merchant config wizard
   pay.html        Customer QR payment page (polls /api/payments/:code/status)
-tests/             Mirror of src/ — one test file per source file
+tests/             Mirror of src/ — one test file per source file (.test.ts)
+tsconfig.json     TypeScript compiler config (target ES2022, CommonJS, outDir dist/)
 ```
 
 ## Database Tables (summary)
@@ -73,12 +75,12 @@ tests/             Mirror of src/ — one test file per source file
 | `payments` | One row per QR payment attempt; tracks reconcile_code → order_id |
 | `webhook_events` | Raw IPN log; used for idempotency + audit |
 
-Full schema in `src/db/schema.js`.
+Full schema in `src/db/schema.ts`.
 
 ## Testing Approach
 
-- **Unit tests**: `crypto.js`, `reconcile.js` — pure functions, no DB
-- **Service tests**: `haravan.js`, `tingee.js` — mock `fetch` and `@tingee/sdk-node` with Jest
+- **Unit tests**: `crypto.ts`, `reconcile.ts` — pure functions, no DB
+- **Service tests**: `haravan.ts`, `tingee.ts` — mock `fetch` and `@tingee/sdk-node` with Jest
 - **Route tests**: use Supertest + an in-memory test DB (`:memory:` SQLite) — no network calls
 - **Do not skip webhook signature verification in tests** — test both valid and invalid signatures
 
