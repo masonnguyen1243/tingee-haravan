@@ -15,6 +15,21 @@ Format: `[version] YYYY-MM-DD — Summary`
 
 ---
 
+## [0.5.1] 2026-06-15 — Phase 4 (Payment routes): QR payment creation and status polling
+
+- Created `src/routes/payment.ts` — two endpoints:
+  - `POST /api/payments` → decrypts Tingee credentials from DB, generates reconcile code, calls `tingee.generateQR`, saves to `payments`; if a pending payment already exists for the same `orderId`, returns it (idempotent)
+  - `GET /api/payments/:code/status` → looks up payment by reconcile code; returns `{ status, amount, paid_at }` or 404
+- Created `tests/routes/payment.test.ts` — 12 tests using Supertest + in-memory SQLite:
+  - Create: response shape, fields passed to `generateQR`, decrypt credentials correctly
+  - Idempotency: second request for same `orderId` returns same code without calling `generateQR` again
+  - Non-pending idempotency: paid order generates a new payment
+  - Error paths: 503 (not configured), 400 (missing fields), 502 (Tingee failure)
+  - Status poll: pending/paid/mismatch states, 404 for unknown code
+- Verified: `npm test tests/routes/payment.test.ts` → 12/12 tests pass
+
+---
+
 ## [0.5.0] 2026-06-15 — Phase 4 (Config routes): merchant and Tingee configuration API
 
 - Created `src/routes/config.ts` — four endpoints:

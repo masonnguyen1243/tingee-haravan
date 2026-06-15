@@ -132,9 +132,9 @@ Create all routes, mount them in `app.ts`, then wire the HTML pages to call the 
 
 **Payment routes — `src/routes/payment.ts`**
 
-- [ ] `POST /api/payments` — reads merchant + config + default account from DB; if a pending payment already exists for the same `orderId`, return it; otherwise generate a reconcile code, call `tingee.generateQR`, save to `payments`; returns `{ reconcileCode, qrCodeImage, status }`
-- [ ] `GET /api/payments/:code/status` — looks up payment by reconcile code; returns `{ status, amount, paid_at }` or 404
-- [ ] Write `tests/routes/payment.test.ts` — test create, idempotency for same orderId, status poll, 404 for unknown code
+- [x] `POST /api/payments` — reads merchant + config + default account from DB; if a pending payment already exists for the same `orderId`, return it; otherwise generate a reconcile code, call `tingee.generateQR`, save to `payments`; returns `{ reconcileCode, qrCodeImage, status }`
+- [x] `GET /api/payments/:code/status` — looks up payment by reconcile code; returns `{ status, amount, paid_at }` or 404
+- [x] Write `tests/routes/payment.test.ts` — test create, idempotency for same orderId, status poll, 404 for unknown code
 
 **Webhook handler — `src/routes/webhook.ts`**
 
