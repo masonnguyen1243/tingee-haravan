@@ -65,22 +65,22 @@ Build the visual shells of both pages as static HTML. No API calls yet — just 
 
 **`public/setup.html` — Merchant configuration wizard**
 
-- [ ] Page heading and short subtitle explaining the 3-step process
-- [ ] Step 1 card: inputs for shop domain and Haravan API token; "Confirm" button; error message area below button
-- [ ] Step 2 card: inputs for Tingee Client ID and Secret Token; "Get accounts" button; error message area
-- [ ] Step 3 card: dropdown for account selection (starts empty); "Complete setup" button; error message area
-- [ ] Steps 2 and 3 visually locked (greyed out, non-interactive) until the previous step completes
-- [ ] Completed steps show a visual "done" state (green border or checkmark)
-- [ ] Success message shown after Step 3 is confirmed
-- [ ] Verify manually: open in browser, check layout and step locking works by toggling CSS classes in DevTools
+- [x] Page heading and short subtitle explaining the 3-step process
+- [x] Step 1 card: inputs for shop domain and Haravan API token; "Confirm" button; error message area below button
+- [x] Step 2 card: inputs for Tingee Client ID and Secret Token; "Get accounts" button; error message area
+- [x] Step 3 card: dropdown for account selection (starts empty); "Complete setup" button; error message area
+- [x] Steps 2 and 3 visually locked (greyed out, non-interactive) until the previous step completes
+- [x] Completed steps show a visual "done" state (green border or checkmark)
+- [x] Success message shown after Step 3 is confirmed
+- [x] Verify manually: open in browser, check layout and step locking works by toggling CSS classes in DevTools
 
 **`public/pay.html` — Customer QR payment page**
 
-- [ ] Loading state shown on initial load ("Loading payment info…")
-- [ ] Payment content area (hidden until loaded): transfer amount, QR image placeholder, transfer note display, "keep note unchanged" warning box
-- [ ] Status area with three states: pending (spinner + "Waiting for payment…"), paid (success message), mismatch (warning message)
-- [ ] Error state for when the page cannot load (no order ID in URL, or API failure)
-- [ ] Verify manually: open in browser, toggle between states in DevTools
+- [x] Loading state shown on initial load ("Loading payment info…")
+- [x] Payment content area (hidden until loaded): transfer amount, QR image placeholder, transfer note display, "keep note unchanged" warning box
+- [x] Status area with three states: pending (spinner + "Waiting for payment…"), paid (success message), mismatch (warning message)
+- [x] Error state for when the page cannot load (no order ID in URL, or API failure)
+- [x] Verify manually: open in browser, toggle between states in DevTools
 
 ---
 
