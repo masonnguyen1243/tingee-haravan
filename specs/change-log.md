@@ -15,6 +15,21 @@ Format: `[version] YYYY-MM-DD — Summary`
 
 ---
 
+## [0.4.2] 2026-06-15 — Phase 3 (Services): Haravan and Tingee API wrappers
+
+- Created `src/services/haravan.ts` — three functions using Node built-in `fetch`:
+  - `validateToken(token)` → `GET /com/shop.json`; throws on non-200
+  - `getOrder(token, orderId)` → `GET /com/orders/{id}.json`; returns `order` object; throws on non-200
+  - `markOrderPaid(token, orderId, amount)` → `POST /com/orders/{id}/transactions.json` with `{ transaction: { kind: "Capture", amount } }`; throws on non-200
+- Created `src/services/tingee.ts` — two functions via `@tingee/sdk-node`:
+  - `getVaList(clientId, secretToken)` → `client.bank.getVaPaging(...)`; returns `items[]`; throws if `code !== "00"`
+  - `generateQR(clientId, secretToken, opts)` → `client.bank.generateVietQr(...)`; returns `{ qrCode, qrCodeImage }`; throws if `code !== "00"`
+- Created `tests/services/haravan.test.ts` — 6 tests: URL/body shape, happy path, 401/404/422 error paths
+- Created `tests/services/tingee.test.ts` — 7 tests: items returned, pagination fields, `content` field passed, error code throws for both functions
+- Verified: `npm test tests/services` → 13/13 tests pass
+
+---
+
 ## [0.4.1] 2026-06-15 — Phase 3 (Utilities): crypto and reconcile code
 
 - Created `src/utils/crypto.ts` — AES-256-GCM encryption helpers

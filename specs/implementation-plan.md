@@ -105,16 +105,16 @@ Build the database, utilities, and API services. Test each in isolation with uni
 
 **Services**
 
-- [ ] Create `src/services/haravan.ts` with three functions:
+- [x] Create `src/services/haravan.ts` with three functions:
   - `validateToken(token)` — `GET /com/shop.json` with Bearer auth; throws on non-200
   - `getOrder(token, orderId)` — `GET /com/orders/{id}.json`; throws on non-200
   - `markOrderPaid(token, orderId, amount)` — `POST /com/orders/{id}/transactions.json` with body `{ transaction: { kind: "Capture", amount } }`; throws on non-200
-- [ ] Write `tests/services/haravan.test.ts` — mock global `fetch`; test happy path and error path for each function; verify request URL and body shape
-- [ ] Create `src/services/tingee.ts` with two functions:
+- [x] Write `tests/services/haravan.test.ts` — mock global `fetch`; test happy path and error path for each function; verify request URL and body shape
+- [x] Create `src/services/tingee.ts` with two functions:
   - `getVaList(clientId, secretToken)` — calls `@tingee/sdk-node` to `POST /v1/get-va-paging`; throws if response code is not `"00"`
   - `generateQR(clientId, secretToken, { bankBin, accountNumber, amount, content })` — calls `@tingee/sdk-node` to `POST /v1/generate-viet-qr`; returns `{ qrCode, qrCodeImage }`; throws on non-`"00"`
-- [ ] Write `tests/services/tingee.test.ts` — mock `@tingee/sdk-node`; verify `getVaList` returns items; verify `generateQR` passes correct fields including `content`; verify both throw on error codes
-- [ ] Verify: `npm test tests/services` passes
+- [x] Write `tests/services/tingee.test.ts` — mock `@tingee/sdk-node`; verify `getVaList` returns items; verify `generateQR` passes correct fields including `content`; verify both throw on error codes
+- [x] Verify: `npm test tests/services` passes
 
 ---
 
