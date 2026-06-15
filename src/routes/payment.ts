@@ -15,15 +15,17 @@ interface PaymentRow {
 }
 
 router.post('/', async (req, res) => {
-  const { orderId, amount } = req.body as { orderId?: string; amount?: number };
+  const { orderId, amount, shop } = req.body as { orderId?: string; amount?: number; shop?: string };
 
-  if (!orderId || amount == null) {
-    return res.status(400).json({ error: 'orderId and amount are required' });
+  if (!orderId || amount == null || !shop) {
+    return res.status(400).json({ error: 'orderId, amount, and shop are required' });
   }
 
-  const merchant = db.prepare('SELECT id FROM merchants LIMIT 1').get() as { id: number } | undefined;
+  const merchant = db
+    .prepare('SELECT id FROM merchants WHERE shop_domain = ?')
+    .get(shop) as { id: number } | undefined;
   if (!merchant) {
-    return res.status(503).json({ error: 'App not configured' });
+    return res.status(404).json({ error: 'Shop not installed' });
   }
 
   // Return existing pending payment for the same orderId (idempotency)

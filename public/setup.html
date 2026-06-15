@@ -120,6 +120,66 @@
     #successBanner .icon { font-size: 2.2rem; margin-bottom: 8px; }
     #successBanner h2 { font-size: 1rem; color: #166534; margin-bottom: 4px; }
     #successBanner p  { font-size: 0.85rem; color: #4b7a56; }
+
+    /* Webhook info box */
+    .webhook-box {
+      margin-top: 20px;
+      background: #fff;
+      border: 2px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 20px 24px;
+      text-align: left;
+    }
+    .webhook-box h3 {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-bottom: 6px;
+    }
+    .webhook-box .sub {
+      font-size: 0.82rem;
+      color: #6b7280;
+      margin-bottom: 14px;
+      line-height: 1.5;
+    }
+    .webhook-url-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .webhook-url {
+      flex: 1;
+      padding: 9px 12px;
+      background: #f4f6f9;
+      border: 1.5px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      color: #1a1a2e;
+      font-family: monospace;
+      word-break: break-all;
+      user-select: all;
+    }
+    .copy-btn {
+      flex-shrink: 0;
+      padding: 9px 14px;
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .copy-btn:hover { background: #4f46e5; }
+    .copy-btn.copied { background: #22c55e; }
+    .webhook-steps {
+      margin-top: 14px;
+      padding-left: 16px;
+      font-size: 0.82rem;
+      color: #374151;
+      line-height: 1.9;
+    }
   </style>
 </head>
 <body>
@@ -190,6 +250,25 @@
       <div class="icon">🎉</div>
       <h2>Thiết lập hoàn tất!</h2>
       <p>Cửa hàng đã được kết nối với Tingee. Đơn hàng thanh toán qua QR sẽ được xác nhận tự động.</p>
+    </div>
+
+    <!-- Webhook instruction -->
+    <div class="webhook-box" id="webhookBox" style="display:none;">
+      <h3>Bước tiếp theo: Cấu hình Webhook URL vào Tingee</h3>
+      <p class="sub">
+        Dán URL bên dưới vào mục <strong>Webhook IPN</strong> trong trang Developers của Tingee
+        (<a href="https://app.tingee.vn" target="_blank" style="color:#6366f1;">app.tingee.vn</a>
+        → Developers → Webhook URL).
+      </p>
+      <div class="webhook-url-row">
+        <div class="webhook-url" id="webhookUrl"></div>
+        <button class="copy-btn" id="copyBtn" onclick="copyWebhookUrl()">Sao chép</button>
+      </div>
+      <ol class="webhook-steps">
+        <li>Đăng nhập <strong>app.tingee.vn</strong> → chọn <strong>Developers</strong></li>
+        <li>Tìm mục <strong>Webhook URL</strong> (hoặc IPN URL) và dán URL trên vào</li>
+        <li>Lưu lại — Tingee sẽ gửi thông báo về URL này mỗi khi có giao dịch</li>
+      </ol>
     </div>
 
   </div>
@@ -328,7 +407,7 @@
         }
         if (accountSelected) {
           document.getElementById('step3').classList.add('done');
-          document.getElementById('successBanner').style.display = 'block';
+          showSuccess();
         }
       } catch (_) {}
     }
@@ -361,12 +440,31 @@
           return;
         }
         document.getElementById('step3').classList.add('done');
-        document.getElementById('successBanner').style.display = 'block';
+        showSuccess();
       } catch (_) {
         setError('error3', 'Không thể kết nối tới server.');
       } finally {
         setLoading(btn, false, 'Hoàn tất thiết lập');
       }
+    }
+
+    function showSuccess() {
+      document.getElementById('successBanner').style.display = 'block';
+      document.getElementById('webhookUrl').textContent = window.location.origin + '/webhook/tingee';
+      document.getElementById('webhookBox').style.display = 'block';
+    }
+
+    function copyWebhookUrl() {
+      const url = document.getElementById('webhookUrl').textContent;
+      navigator.clipboard.writeText(url).then(function() {
+        const btn = document.getElementById('copyBtn');
+        btn.textContent = 'Đã sao chép!';
+        btn.classList.add('copied');
+        setTimeout(function() {
+          btn.textContent = 'Sao chép';
+          btn.classList.remove('copied');
+        }, 2000);
+      });
     }
   </script>
 </body>

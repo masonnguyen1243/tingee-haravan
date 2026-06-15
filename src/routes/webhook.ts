@@ -21,23 +21,37 @@ router.post('/', async (req, res) => {
 
   const key = process.env.ENCRYPTION_KEY!;
 
-  // Load merchant + Tingee secret for signature verification
-  const merchant = db
-    .prepare('SELECT id, api_token_enc FROM merchants LIMIT 1')
-    .get() as { id: number; api_token_enc: string } | undefined;
+  // Extract reconcile code from content early (needed for merchant lookup)
+  const content = body.content as string | undefined;
+  const codeMatch = content?.match(/TG[A-Z0-9]+/);
+  const reconcileCode = codeMatch?.[0];
 
-  const tingeeConfig = merchant
-    ? (db
-        .prepare('SELECT secret_enc FROM tingee_configs WHERE merchant_id = ?')
-        .get(merchant.id) as { secret_enc: string } | undefined)
-    : undefined;
-
+  // Look up payment and merchant via reconcile code
+  let payment: { id: number; order_id: string; amount: number; merchant_id: number } | undefined;
+  let merchantRow: { id: number; access_token_enc: string } | undefined;
   let secretToken: string | undefined;
-  if (tingeeConfig) {
-    try {
-      secretToken = decrypt(tingeeConfig.secret_enc, key);
-    } catch {
-      // Treat decryption failure as missing config
+
+  if (reconcileCode) {
+    payment = db
+      .prepare('SELECT id, order_id, amount, merchant_id FROM payments WHERE reconcile_code = ?')
+      .get(reconcileCode) as typeof payment;
+
+    if (payment) {
+      merchantRow = db
+        .prepare('SELECT id, access_token_enc FROM merchants WHERE id = ?')
+        .get(payment.merchant_id) as typeof merchantRow;
+
+      const tingeeConfig = db
+        .prepare('SELECT secret_enc FROM tingee_configs WHERE merchant_id = ?')
+        .get(payment.merchant_id) as { secret_enc: string } | undefined;
+
+      if (tingeeConfig) {
+        try {
+          secretToken = decrypt(tingeeConfig.secret_enc, key);
+        } catch {
+          // Treat decryption failure as missing config
+        }
+      }
     }
   }
 
@@ -64,22 +78,12 @@ router.post('/', async (req, res) => {
     }
   }
 
-  // Extract reconcile code from content
-  const content = body.content as string | undefined;
-  const codeMatch = content?.match(/TG[A-Z0-9]+/);
-  const reconcileCode = codeMatch?.[0];
-
   if (!reconcileCode) {
     db.prepare(
       'INSERT INTO webhook_events (tingee_transaction_code, raw_payload, signature_valid) VALUES (?, ?, 1)'
     ).run(transactionCode, rawPayload);
     return res.json({ code: '00' });
   }
-
-  // Look up payment
-  const payment = db
-    .prepare('SELECT id, order_id, amount FROM payments WHERE reconcile_code = ?')
-    .get(reconcileCode) as { id: number; order_id: string; amount: number } | undefined;
 
   if (!payment) {
     db.prepare(
@@ -100,8 +104,8 @@ router.post('/', async (req, res) => {
 
   // Amounts match — mark order paid on Haravan
   try {
-    const haravanToken = decrypt(merchant!.api_token_enc, key);
-    await markOrderPaid(haravanToken, payment.order_id, payment.amount);
+    const accessToken = decrypt(merchantRow!.access_token_enc, key);
+    await markOrderPaid(accessToken, payment.order_id, payment.amount);
   } catch {
     db.prepare(
       'INSERT INTO webhook_events (tingee_transaction_code, raw_payload, signature_valid) VALUES (?, ?, 1)'
@@ -111,11 +115,11 @@ router.post('/', async (req, res) => {
 
   db.transaction(() => {
     db.prepare("UPDATE payments SET status = 'paid', paid_at = datetime('now') WHERE id = ?").run(
-      payment.id
+      payment!.id
     );
     db.prepare(
       'INSERT INTO webhook_events (tingee_transaction_code, raw_payload, matched_payment_id, signature_valid) VALUES (?, ?, ?, 1)'
-    ).run(transactionCode, rawPayload, payment.id);
+    ).run(transactionCode, rawPayload, payment!.id);
   })();
 
   return res.json({ code: '00', message: 'Success' });

@@ -1,43 +1,45 @@
 import { Router } from 'express';
 import db from '../db';
 import { encrypt, decrypt } from '../utils/crypto';
-import { validateToken } from '../services/haravan';
 import { getVaList } from '../services/tingee';
 
 const router = Router();
 
-router.get('/', (_req, res) => {
-  const merchant = db
-    .prepare('SELECT id, shop_domain FROM merchants LIMIT 1')
-    .get() as { id: number; shop_domain: string } | undefined;
+function getMerchantByShop(shop: string): { id: number; shop_domain: string } | undefined {
+  return db
+    .prepare('SELECT id, shop_domain FROM merchants WHERE shop_domain = ?')
+    .get(shop) as { id: number; shop_domain: string } | undefined;
+}
 
-  const haravanConfigured = !!merchant;
-  let tingeeConfigured = false;
-  let accountSelected = false;
-  let shopDomain: string | null = null;
-  let selectedAccount: { accountNumber: string; bankBin: string; bankName: string } | null = null;
+router.get('/', (req, res) => {
+  const shop = req.query.shop as string | undefined;
+  if (!shop) return res.status(400).json({ error: 'shop is required' });
 
-  if (merchant) {
-    shopDomain = merchant.shop_domain;
-
-    const tc = db.prepare('SELECT id FROM tingee_configs WHERE merchant_id = ?').get(merchant.id);
-    tingeeConfigured = !!tc;
-
-    const ta = db
-      .prepare('SELECT account_number, bank_bin, bank_name FROM tingee_accounts WHERE merchant_id = ? AND is_default = 1')
-      .get(merchant.id) as { account_number: string; bank_bin: string; bank_name: string } | undefined;
-    accountSelected = !!ta;
-    if (ta) {
-      selectedAccount = { accountNumber: ta.account_number, bankBin: ta.bank_bin, bankName: ta.bank_name };
-    }
+  const merchant = getMerchantByShop(shop);
+  if (!merchant) {
+    return res.json({ tingeeConfigured: false, accountSelected: false, shopDomain: shop, selectedAccount: null });
   }
 
-  res.json({ haravanConfigured, tingeeConfigured, accountSelected, shopDomain, selectedAccount });
+  const tc = db.prepare('SELECT id FROM tingee_configs WHERE merchant_id = ?').get(merchant.id);
+  const tingeeConfigured = !!tc;
+
+  const ta = db
+    .prepare('SELECT account_number, bank_bin, bank_name FROM tingee_accounts WHERE merchant_id = ? AND is_default = 1')
+    .get(merchant.id) as { account_number: string; bank_bin: string; bank_name: string } | undefined;
+  const accountSelected = !!ta;
+  const selectedAccount = ta
+    ? { accountNumber: ta.account_number, bankBin: ta.bank_bin, bankName: ta.bank_name }
+    : null;
+
+  return res.json({ tingeeConfigured, accountSelected, shopDomain: shop, selectedAccount });
 });
 
-router.get('/accounts', async (_req, res) => {
-  const merchant = db.prepare('SELECT id FROM merchants LIMIT 1').get() as { id: number } | undefined;
-  if (!merchant) return res.status(400).json({ error: 'Haravan not configured' });
+router.get('/accounts', async (req, res) => {
+  const shop = req.query.shop as string | undefined;
+  if (!shop) return res.status(400).json({ error: 'shop is required' });
+
+  const merchant = getMerchantByShop(shop);
+  if (!merchant) return res.status(404).json({ error: 'Shop not installed' });
 
   const tc = db
     .prepare('SELECT client_id_enc, secret_enc FROM tingee_configs WHERE merchant_id = ?')
@@ -55,32 +57,14 @@ router.get('/accounts', async (_req, res) => {
   }
 });
 
-router.post('/haravan', async (req, res) => {
-  const { shopDomain, apiToken } = req.body as { shopDomain?: string; apiToken?: string };
-
-  if (!shopDomain || !apiToken) {
-    return res.status(400).json({ error: 'shopDomain and apiToken are required' });
-  }
-
-  try {
-    await validateToken(apiToken);
-  } catch (err) {
-    return res.status(400).json({ error: (err as Error).message });
-  }
-
-  const tokenEnc = encrypt(apiToken, process.env.ENCRYPTION_KEY!);
-
-  db.prepare(
-    `INSERT INTO merchants (shop_domain, api_token_enc) VALUES (?, ?)
-     ON CONFLICT(shop_domain) DO UPDATE SET api_token_enc = excluded.api_token_enc, updated_at = datetime('now')`
-  ).run(shopDomain, tokenEnc);
-
-  return res.json({ ok: true });
-});
-
 router.post('/tingee', async (req, res) => {
-  const { clientId, secretToken } = req.body as { clientId?: string; secretToken?: string };
+  const shop = req.query.shop as string | undefined;
+  if (!shop) return res.status(400).json({ error: 'shop is required' });
 
+  const merchant = getMerchantByShop(shop);
+  if (!merchant) return res.status(404).json({ error: 'Shop not installed' });
+
+  const { clientId, secretToken } = req.body as { clientId?: string; secretToken?: string };
   if (!clientId || !secretToken) {
     return res.status(400).json({ error: 'clientId and secretToken are required' });
   }
@@ -90,11 +74,6 @@ router.post('/tingee', async (req, res) => {
     accounts = await getVaList(clientId, secretToken);
   } catch (err) {
     return res.status(400).json({ error: (err as Error).message });
-  }
-
-  const merchant = db.prepare('SELECT id FROM merchants LIMIT 1').get() as { id: number } | undefined;
-  if (!merchant) {
-    return res.status(400).json({ error: 'Haravan not configured' });
   }
 
   const key = process.env.ENCRYPTION_KEY!;
@@ -119,6 +98,12 @@ router.post('/tingee', async (req, res) => {
 });
 
 router.post('/account', (req, res) => {
+  const shop = req.query.shop as string | undefined;
+  if (!shop) return res.status(400).json({ error: 'shop is required' });
+
+  const merchant = getMerchantByShop(shop);
+  if (!merchant) return res.status(404).json({ error: 'Shop not installed' });
+
   const { accountNumber, bankBin, bankName } = req.body as {
     accountNumber?: string;
     bankBin?: string;
@@ -129,13 +114,7 @@ router.post('/account', (req, res) => {
     return res.status(400).json({ error: 'accountNumber and bankBin are required' });
   }
 
-  const merchant = db.prepare('SELECT id FROM merchants LIMIT 1').get() as { id: number } | undefined;
-  if (!merchant) {
-    return res.status(400).json({ error: 'Haravan not configured' });
-  }
-
   db.prepare('DELETE FROM tingee_accounts WHERE merchant_id = ?').run(merchant.id);
-
   db.prepare(
     'INSERT INTO tingee_accounts (merchant_id, account_number, bank_bin, bank_name, is_default) VALUES (?, ?, ?, ?, 1)'
   ).run(merchant.id, accountNumber, bankBin, bankName ?? null);

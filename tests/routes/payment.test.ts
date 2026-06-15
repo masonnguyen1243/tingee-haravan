@@ -43,7 +43,7 @@ afterEach(() => {
 
 function seedDb() {
   const { lastInsertRowid } = realDb
-    .prepare("INSERT INTO merchants (shop_domain, api_token_enc) VALUES ('shop.myharavan.com', 'enc')")
+    .prepare("INSERT INTO merchants (shop_domain, access_token_enc) VALUES ('shop.myharavan.com', 'enc')")
     .run();
   const merchantId = lastInsertRowid as number;
 
@@ -67,7 +67,7 @@ describe('POST /api/payments', () => {
 
     const res = await request(app)
       .post('/api/payments')
-      .send({ orderId: 'order_123', amount: 500000 });
+      .send({ orderId: 'order_123', amount: 500000, shop: 'shop.myharavan.com' });
 
     expect(res.status).toBe(200);
     expect(res.body.reconcileCode).toMatch(/^TG[A-Z0-9]{7}$/);
@@ -81,7 +81,7 @@ describe('POST /api/payments', () => {
 
     const res = await request(app)
       .post('/api/payments')
-      .send({ orderId: 'order_456', amount: 250000 });
+      .send({ orderId: 'order_456', amount: 250000, shop: 'shop.myharavan.com' });
 
     expect(mockGenerateQR).toHaveBeenCalledWith(
       'client_123',
@@ -101,11 +101,11 @@ describe('POST /api/payments', () => {
 
     const first = await request(app)
       .post('/api/payments')
-      .send({ orderId: 'order_123', amount: 500000 });
+      .send({ orderId: 'order_123', amount: 500000, shop: 'shop.myharavan.com' });
 
     const second = await request(app)
       .post('/api/payments')
-      .send({ orderId: 'order_123', amount: 500000 });
+      .send({ orderId: 'order_123', amount: 500000, shop: 'shop.myharavan.com' });
 
     expect(second.status).toBe(200);
     expect(second.body.reconcileCode).toBe(first.body.reconcileCode);
@@ -125,27 +125,32 @@ describe('POST /api/payments', () => {
 
     const res = await request(app)
       .post('/api/payments')
-      .send({ orderId: 'order_123', amount: 500000 });
+      .send({ orderId: 'order_123', amount: 500000, shop: 'shop.myharavan.com' });
 
     expect(res.status).toBe(200);
     expect(res.body.reconcileCode).not.toBe('TGOLD0001');
     expect(mockGenerateQR).toHaveBeenCalledTimes(1);
   });
 
-  test('returns 503 when merchant is not configured', async () => {
+  test('returns 404 when shop is not installed', async () => {
     const res = await request(app)
       .post('/api/payments')
-      .send({ orderId: 'order_123', amount: 500000 });
-    expect(res.status).toBe(503);
+      .send({ orderId: 'order_123', amount: 500000, shop: 'unknown.myharavan.com' });
+    expect(res.status).toBe(404);
+  });
+
+  test('returns 400 when shop is missing', async () => {
+    const res = await request(app).post('/api/payments').send({ orderId: 'order_123', amount: 500000 });
+    expect(res.status).toBe(400);
   });
 
   test('returns 400 when orderId is missing', async () => {
-    const res = await request(app).post('/api/payments').send({ amount: 500000 });
+    const res = await request(app).post('/api/payments').send({ amount: 500000, shop: 'shop.myharavan.com' });
     expect(res.status).toBe(400);
   });
 
   test('returns 400 when amount is missing', async () => {
-    const res = await request(app).post('/api/payments').send({ orderId: 'order_123' });
+    const res = await request(app).post('/api/payments').send({ orderId: 'order_123', shop: 'shop.myharavan.com' });
     expect(res.status).toBe(400);
   });
 
@@ -155,7 +160,7 @@ describe('POST /api/payments', () => {
 
     const res = await request(app)
       .post('/api/payments')
-      .send({ orderId: 'order_123', amount: 500000 });
+      .send({ orderId: 'order_123', amount: 500000, shop: 'shop.myharavan.com' });
     expect(res.status).toBe(502);
     expect(res.body.error).toMatch('97');
   });

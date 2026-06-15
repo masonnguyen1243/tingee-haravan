@@ -1,16 +1,16 @@
 # Test Plan — Tingee × Haravan Integration
 
-**Version:** 1.0  
+**Version:** 2.0
 **Date:** 2026-06-15
 
 ---
 
 ## 1. Testing Philosophy
 
-- **Test behavior, not implementation.** Tests assert what the system does (e.g., "payment gets marked paid"), not how it does it (e.g., "db.prepare was called").
+- **Test behavior, not implementation.** Tests assert what the system does, not how it does it.
 - **No real network calls in unit/integration tests.** Mock `fetch` and `@tingee/sdk-node` at the module boundary.
-- **Use real SQLite (`:memory:`) in route tests**, not a mocked DB — it's fast and catches schema issues.
-- **Always test the security-critical paths** (signature verification, token encryption, idempotency) even when they feel boilerplate.
+- **Use real SQLite (`:memory:`) in route tests**, not a mocked DB — fast and catches schema issues.
+- **Always test security-critical paths** — signature verification, token encryption, OAuth state/HMAC, idempotency.
 
 ---
 
@@ -22,10 +22,10 @@ Pure functions, no I/O, no DB.
 
 | File | What to test |
 |---|---|
-| `crypto.test.js` | Encrypt/decrypt round-trip, random IV uniqueness, tamper detection |
-| `reconcile.test.js` | Format regex, uniqueness across 1000 calls |
+| `crypto.test.ts` | Encrypt/decrypt round-trip, random IV uniqueness, tamper detection |
+| `reconcile.test.ts` | Format regex, uniqueness across 1000 calls |
 
-**Run:** `npx jest tests/utils/`
+**Run:** `npm test tests/utils`
 
 ### 2.2 Service Tests — `tests/services/`
 
@@ -33,10 +33,10 @@ Mock `fetch` (global) and `@tingee/sdk-node`. No DB.
 
 | File | What to test |
 |---|---|
-| `haravan.test.js` | `validateToken` happy path and 401, `getOrder` fetch URL, `markOrderPaid` request body |
-| `tingee.test.js` | `getVaList` returns items, throws on non-00, `generateQR` passes correct fields to SDK |
+| `haravan.test.ts` | `getShop` happy path and 401, `getOrder` fetch URL, `markOrderPaid` request body, `registerScriptTag` request shape |
+| `tingee.test.ts` | `getVaList` returns items, throws on non-00; `generateQR` passes correct fields; both throw on error codes |
 
-**Run:** `npx jest tests/services/`
+**Run:** `npm test tests/services`
 
 ### 2.3 Route/Integration Tests — `tests/routes/`
 
@@ -44,21 +44,22 @@ Use Supertest + in-memory SQLite. Mock service modules with Jest.
 
 | File | What to test |
 |---|---|
-| `config.test.js` | Full config flow: Haravan → Tingee → account; GET /api/config status |
-| `payment.test.js` | Create payment returns QR; idempotency for same orderId; status polling; 404 for unknown code |
-| `webhook.test.js` | Valid sig marks paid; invalid sig rejected; duplicate idempotency; amount mismatch |
+| `auth.test.ts` | OAuth redirect URL, state CSRF, callback token exchange, HMAC verification, invalid flows |
+| `config.test.ts` | Tingee setup flow (shop-scoped); GET /api/config before and after; raw token exclusion |
+| `payment.test.ts` | Create payment, idempotency, status polling, 404, missing shop |
+| `webhook.test.ts` | Valid sig + match, invalid sig, duplicate, amount mismatch, multi-merchant routing |
 
-**Run:** `npx jest tests/routes/`
+**Run:** `npm test tests/routes`
 
 ### 2.4 Manual Tests
 
-Tests that require a browser or live credentials. Not automated.
-
 | Scenario | How to test |
 |---|---|
-| Config wizard renders correctly | Open http://localhost:3000; complete all 3 steps |
-| QR page renders QR image | `GET /pay?order_id=X&amount=Y`; verify QR visible |
-| Poll loop shows success | Simulate paid status via direct DB update; verify page updates within 3s |
+| OAuth install flow | Open `/install`, enter shop domain, click Install, complete OAuth, verify redirect to setup |
+| Script tag redirect | Place test order on dev store, visit thank-you page, confirm redirect to `/pay` |
+| QR renders | `/pay?order_id=X&amount=Y&shop=Z` — verify QR visible and scannable |
+| Poll shows success | Simulate paid status via direct DB update; verify page updates within 3s |
+| Two merchants isolated | Install two shops, verify each only sees their own payments |
 
 ---
 
@@ -68,10 +69,11 @@ Tests that require a browser or live credentials. Not automated.
 
 | # | Test | Expected |
 |---|---|---|
-| C1 | `encrypt('secret', KEY)` returns a string | Non-empty string, not equal to `'secret'` |
-| C2 | `decrypt(encrypt(text, KEY), KEY)` round-trip | Returns original text |
-| C3 | Two calls to `encrypt` with same input differ | Different ciphertext (random IV) |
-| C4 | `decrypt` on tampered ciphertext | Throws (GCM auth tag mismatch) |
+| C1 | `encrypt('secret', KEY)` | Non-empty string, not equal to `'secret'` |
+| C2 | `decrypt(encrypt(text, KEY), KEY)` | Returns original text |
+| C3 | Two calls to `encrypt` with same input | Different ciphertext (random IV) |
+| C4 | `decrypt` on tampered ciphertext | Throws |
+| C5 | `decrypt` with wrong key | Throws |
 
 ### 3.2 Reconcile Code Generator
 
@@ -84,11 +86,13 @@ Tests that require a browser or live credentials. Not automated.
 
 | # | Test | Expected |
 |---|---|---|
-| H1 | `validateToken` with mocked 200 | Returns shop data |
-| H2 | `validateToken` with mocked 401 | Throws with "401" in message |
+| H1 | `getShop` with mocked 200 | Returns shop data |
+| H2 | `getShop` with mocked 401 | Throws with "401" in message |
 | H3 | `getOrder` calls correct URL | `GET /com/orders/12345.json` with Bearer auth |
 | H4 | `markOrderPaid` sends correct body | POST with `{transaction:{kind:"Capture",amount:500000}}` |
 | H5 | `markOrderPaid` on non-200 | Throws |
+| H6 | `registerScriptTag` sends correct body | POST to `/com/script_tags.json` with `{script_tag:{event:"onload",src:URL}}` |
+| H7 | `registerScriptTag` on non-200 | Throws |
 
 ### 3.4 Tingee Service
 
@@ -98,43 +102,66 @@ Tests that require a browser or live credentials. Not automated.
 | T2 | `getVaList` on code !== "00" | Throws |
 | T3 | `generateQR` passes content field | SDK called with `content = reconcileCode` |
 | T4 | `generateQR` returns `qrCode` and `qrCodeImage` | Both fields present |
+| T5 | `generateQR` on code !== "00" | Throws |
 
-### 3.5 Config Routes
-
-| # | Test | Expected |
-|---|---|---|
-| CF1 | `GET /api/config` with empty DB | `{haravanConfigured:false, tingeeConfigured:false, accountSelected:false}` |
-| CF2 | `POST /api/config/haravan` with valid data | 200 `{ok:true}` |
-| CF3 | `POST /api/config/haravan` missing `apiToken` | 400 |
-| CF4 | `POST /api/config/haravan` with Haravan returning 401 | 400 with error message |
-| CF5 | `POST /api/config/tingee` returns account list | 200 with `accounts` array |
-| CF6 | `POST /api/config/tingee` without Haravan set up | 400 "Configure Haravan first" |
-| CF7 | `POST /api/config/account` saves default account | 200 `{ok:true}` |
-| CF8 | `GET /api/config` after full setup | All three flags `true` |
-| CF9 | API response never includes raw token | `api_token_enc` and `secret_enc` not in any response body |
-
-### 3.6 Payment Routes
+### 3.5 Auth Routes (OAuth)
 
 | # | Test | Expected |
 |---|---|---|
-| P1 | `POST /api/payments` creates pending payment | 201 with `reconcileCode`, `qrCodeImage`, `status:"pending"` |
-| P2 | `POST /api/payments` reconcileCode matches `TG[A-Z0-9]{7}` | Format valid |
-| P3 | `POST /api/payments` with same orderId twice | Same reconcileCode returned |
-| P4 | `GET /api/payments/:code/status` for pending | `{status:"pending"}` |
-| P5 | `GET /api/payments/UNKNOWN/status` | 404 |
-| P6 | `POST /api/payments` when not configured | 503 |
+| A1 | `GET /auth/haravan` without `shop` param | 400 |
+| A2 | `GET /auth/haravan?shop=invalid` (bad format) | 400 |
+| A3 | `GET /auth/haravan?shop=valid.myharavan.com` | 302 redirect to Haravan OAuth URL; state saved in `oauth_states` |
+| A4 | OAuth redirect URL contains correct `client_id`, `scope`, `redirect_uri`, `state` | Verified via redirect URL params |
+| A5 | `GET /auth/haravan/callback` with unknown state | 400 |
+| A6 | `GET /auth/haravan/callback` with wrong shop for state | 400 |
+| A7 | `GET /auth/haravan/callback` with invalid HMAC | 400 |
+| A8 | `GET /auth/haravan/callback` valid | 302 to `/setup?shop=...`; merchant upserted in DB; `registerScriptTag` called; state deleted |
+| A9 | State nonce is single-use | Second callback with same state → 400 |
+| A10 | Reinstall same shop | Merchant updated (upsert), not duplicate |
 
-### 3.7 Webhook Handler
+### 3.6 Config Routes
 
 | # | Test | Expected |
 |---|---|---|
-| W1 | Valid signature + matching reconcile code + correct amount | Payment marked `paid`, Haravan called, 200 `{code:"00"}` |
-| W2 | Invalid `x-signature` | 200 `{code:"00"}` returned; payment status unchanged |
-| W3 | Same `transactionCode` sent twice | Haravan `markOrderPaid` called exactly once |
-| W4 | `content` field has no TG-pattern | 200 returned; no payment updated |
-| W5 | Amount in IPN differs from `payments.amount` | Payment set to `mismatch`; Haravan NOT called |
-| W6 | All IPN payloads logged to `webhook_events` | Row exists for every incoming IPN |
-| W7 | Unmatched IPN (no reconcile code found) | `webhook_events` row with `matched_payment_id = NULL` |
+| CF1 | `GET /api/config?shop=SHOP` with fresh merchant | `{tingeeConfigured:false, accountSelected:false}` |
+| CF2 | `POST /api/config/tingee?shop=SHOP` with valid creds | 200 `{accounts:[...]}` |
+| CF3 | `POST /api/config/tingee?shop=SHOP` missing fields | 400 |
+| CF4 | `POST /api/config/tingee?shop=SHOP` Tingee rejects creds | 400 with error message |
+| CF5 | `POST /api/config/tingee?shop=UNKNOWN` (not installed) | 404 |
+| CF6 | `POST /api/config/account?shop=SHOP` saves default | 200 `{ok:true}` |
+| CF7 | `POST /api/config/account?shop=SHOP` missing fields | 400 |
+| CF8 | `GET /api/config?shop=SHOP` after full setup | `{tingeeConfigured:true, accountSelected:true}` |
+| CF9 | API response never includes raw token or encrypted fields | `access_token_enc`, `secret_enc` not in any response |
+| CF10 | shopA config not visible via shopB's shop param | Isolation verified |
+
+### 3.7 Payment Routes
+
+| # | Test | Expected |
+|---|---|---|
+| P1 | `POST /api/payments` with valid shop + orderId + amount | 200 with `reconcileCode`, `qrCodeImage`, `status:"pending"` |
+| P2 | Reconcile code format | Matches `/^TG[A-Z0-9]{7}$/` |
+| P3 | Same orderId + shop twice (pending) | Same reconcileCode returned; `generateQR` not called again |
+| P4 | Same orderId + shop when payment is `paid` | New payment created |
+| P5 | `GET /api/payments/:code/status` for pending | `{status:"pending"}` |
+| P6 | `GET /api/payments/UNKNOWN/status` | 404 |
+| P7 | `POST /api/payments` missing `shop` | 400 |
+| P8 | `POST /api/payments` missing `orderId` or `amount` | 400 |
+| P9 | `POST /api/payments` shop not installed | 404 |
+| P10 | `POST /api/payments` shop not fully configured | 503 |
+
+### 3.8 Webhook Handler
+
+| # | Test | Expected |
+|---|---|---|
+| W1 | Valid signature + matching reconcile code + correct amount | Payment `paid`; Haravan called; 200 `{code:"00"}` |
+| W2 | Invalid `x-signature` | 200 `{code:"00"}`; payment status unchanged; event logged with `signature_valid=0` |
+| W3 | Missing signature header | 200 `{code:"00"}`; treated as invalid |
+| W4 | Same `transactionCode` sent twice | `markOrderPaid` called exactly once; second IPN returns 200 without processing |
+| W5 | `content` has no TG-pattern | 200 returned; no payment updated |
+| W6 | Amount in IPN differs from `payments.amount` | Status = `mismatch`; Haravan NOT called |
+| W7 | All valid IPNs logged with `signature_valid=1` | Row in `webhook_events` for every IPN |
+| W8 | Matched IPN has `matched_payment_id` set | FK references the correct payment row |
+| W9 | Webhook routes to correct merchant | ShopA's webhook does not affect shopB's payments |
 
 ---
 
@@ -142,11 +169,14 @@ Tests that require a browser or live credentials. Not automated.
 
 | # | Scenario | Expected |
 |---|---|---|
-| S1 | Webhook with forged signature | Silently rejected, 200 returned (no 4xx that reveals system info) |
-| S2 | `GET /api/config` | Never returns `api_token_enc` or `secret_enc` fields |
-| S3 | Webhook body tampered after signature computed | Auth tag mismatch → rejected |
-| S4 | Two orders with same amount, different reconcile codes | Only the matching code's order updated |
-| S5 | Reconcile code reuse attempted (DB UNIQUE constraint) | INSERT fails; code guaranteed unique |
+| S1 | Webhook with forged signature | Silently rejected, 200 returned |
+| S2 | `GET /api/config` | Never returns `access_token_enc` or `secret_enc` |
+| S3 | Webhook body tampered after signature | Auth tag mismatch → rejected |
+| S4 | Two orders same amount, different reconcile codes | Only matching code's order updated |
+| S5 | Reconcile code reuse attempt | DB UNIQUE constraint fails; code guaranteed unique |
+| S6 | OAuth callback with state from different shop | 400; no token stored |
+| S6 | OAuth callback with forged Haravan HMAC | 400; no token stored |
+| S7 | Config API called for uninstalled shop | 404; no data leaked |
 
 ---
 
@@ -154,11 +184,13 @@ Tests that require a browser or live credentials. Not automated.
 
 | Excluded | Reason |
 |---|---|
-| Real Tingee API calls | Requires live credentials; covered by UAT phase |
+| Real Tingee API calls | Requires live credentials; covered by UAT |
 | Real Haravan API calls | Same; mock is sufficient for unit correctness |
-| ngrok tunnel | Infrastructure concern, not app logic |
-| Browser rendering of QR image | Manual test only; jest-dom adds complexity without value here |
-| SQLite file permissions | Environment concern, not app logic |
+| Real OAuth flow end-to-end | Requires Haravan Partner credentials; covered by UAT |
+| ngrok tunnel | Infrastructure concern |
+| Browser rendering of QR image | Manual test only |
+| SQLite file permissions | Environment concern |
+| Script tag execution in browser | Manual test only; Haravan JS context not reproducible in Jest |
 
 ---
 
@@ -166,16 +198,16 @@ Tests that require a browser or live credentials. Not automated.
 
 ```bash
 # All tests
-npx jest --runInBand
+npm test
 
-# Watch mode during development
-npx jest --watch
+# Watch mode
+npm run test:watch
 
 # Single file
-npx jest tests/routes/webhook.test.js
+npm test tests/routes/auth.test.ts
 
 # With coverage
-npx jest --coverage
+npm test -- --coverage
 ```
 
 Target: all unit + service + route tests pass before any deployment.
@@ -184,16 +216,19 @@ Target: all unit + service + route tests pass before any deployment.
 
 ## 7. UAT (User Acceptance Testing) — Pre-Production Checklist
 
-Run these against Tingee UAT environment with a real Haravan dev shop.
+Run against Tingee UAT environment with a real Haravan dev shop.
 
-- [ ] Complete 3-step merchant config with real Tingee credentials
-- [ ] Verify `GET /api/config` returns all three flags `true`
-- [ ] Open `/pay?order_id=<real_id>&amount=<real_amount>` — QR renders
-- [ ] Scan QR with banking app, make transfer to UAT account
-- [ ] Verify Haravan order moves to "Đã thanh toán" within 10 seconds
-- [ ] Verify payment page shows success message
-- [ ] Check `webhook_events` table has the IPN record
-- [ ] Send duplicate webhook (replay) — confirm Haravan not called twice
-- [ ] Send webhook with wrong amount — confirm order NOT marked paid; `status = mismatch`
-- [ ] Revoke Haravan token → verify app returns 400 on next config validation
-- [ ] Switch to PROD Tingee credentials; repeat the full flow
+- [ ] Install app via OAuth on dev store — redirected to setup page
+- [ ] Complete 2-step Tingee setup
+- [ ] Verify `GET /api/config?shop=...` returns `{tingeeConfigured:true, accountSelected:true}`
+- [ ] Confirm script tag registered: Haravan Admin → Apps → Script Tags
+- [ ] Place test order; visit thank-you page; confirm redirect to `/pay`
+- [ ] QR renders; transfer note visible
+- [ ] Make transfer via banking app (UAT); order moves to "Đã thanh toán" within 10s
+- [ ] Pay page shows success
+- [ ] Check `webhook_events` table: IPN logged with `matched_payment_id` set
+- [ ] Send duplicate webhook → Haravan not called twice
+- [ ] Send webhook with wrong amount → order NOT marked paid; `status = mismatch`
+- [ ] Send forged signature → order unaffected
+- [ ] Install second merchant → verify data isolation
+- [ ] Reinstall same shop → no duplicate merchant row

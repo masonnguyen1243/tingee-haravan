@@ -15,6 +15,56 @@ Format: `[version] YYYY-MM-DD — Summary`
 
 ---
 
+## [0.6.0] 2026-06-15 — Phase 5: Haravan OAuth 2.0 App (multi-tenant refactor)
+
+Full refactor from single-tenant Private App to multi-tenant Public App with OAuth 2.0 install flow.
+
+**DB schema (`src/db/schema.ts`):**
+- Added `oauth_states` table (CSRF nonce for OAuth — single-use, deleted after callback)
+- Renamed `merchants.api_token_enc` → `merchants.access_token_enc`; added `scope TEXT` and `installed_at INTEGER` columns
+
+**Haravan service (`src/services/haravan.ts`):**
+- Renamed `validateToken()` → `getShop()` — now returns shop data instead of void
+- Added `registerScriptTag(accessToken, scriptUrl)` — registers JS script via Haravan Script Tags API
+- Renamed param `token` → `accessToken` throughout
+
+**Auth routes (`src/routes/auth.ts` — new file):**
+- `GET /auth/haravan?shop=...` — validates domain format, generates CSRF state nonce, redirects to Haravan OAuth consent screen
+- `GET /auth/haravan/callback` — verifies state nonce + Haravan HMAC-SHA256, exchanges code for access token, encrypts and upserts merchant, registers script tag, redirects to `/setup?shop=...`
+
+**Config routes (`src/routes/config.ts`):**
+- Removed `POST /api/config/haravan` (replaced by OAuth)
+- All endpoints now require `?shop=` param and look up merchant by `shop_domain`
+- `GET /api/config` no longer returns `haravanConfigured` (always true post-OAuth)
+- Returns 404 if shop not installed (instead of 400)
+
+**Payment routes (`src/routes/payment.ts`):**
+- `POST /api/payments` now requires `shop` in request body; looks up merchant by `shop_domain`; returns 404 if not installed
+
+**Webhook routes (`src/routes/webhook.ts`):**
+- Merchant lookup now goes via `reconcile_code → payments.merchant_id → merchants` (multi-tenant safe)
+- Removed `LIMIT 1` shortcut; renamed `api_token_enc` → `access_token_enc`
+
+**Pages routes (`src/routes/pages.ts`):**
+- Added `GET /install` → `public/install.html`
+- Added `GET /setup` → `public/setup.html`
+- `GET /` now redirects to `/install`
+
+**App (`src/app.ts`):**
+- Mounted `authRouter` at `/auth`
+
+**Tests:**
+- Created `tests/routes/auth.test.ts` — 9 tests: redirect URL, state nonce, HMAC verification, shop format, upsert, single-use nonce, shop mismatch
+- Rewrote `tests/routes/config.test.ts` — removed Haravan config tests, shop-scoped all endpoints, added isolation test (CF10)
+- Updated `tests/routes/payment.test.ts` — added `shop` to all POST bodies, 503→404 for uninstalled shop
+- Updated `tests/routes/webhook.test.ts` — `api_token_enc` → `access_token_enc`
+- Updated `tests/db/schema.test.ts` — 5→6 tables, `api_token_enc` → `access_token_enc`
+- Updated `tests/services/haravan.test.ts` — `validateToken` → `getShop`, added `registerScriptTag` tests
+
+**Verified:** `npm test` → 85/85 tests pass across 9 test suites
+
+---
+
 ## [0.5.5] 2026-06-15 — Phase 4 (Wire pay.html to API): customer payment page calls real endpoints
 
 - Updated `public/pay.html` — `init()` now calls real API and polls for status:

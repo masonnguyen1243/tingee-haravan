@@ -20,9 +20,10 @@ function getTables(database: InstanceType<typeof Database>): string[] {
 }
 
 describe('schema', () => {
-  test('all 5 tables exist after init', () => {
+  test('all 6 tables exist after init', () => {
     const tables = getTables(db);
     expect(tables).toContain('merchants');
+    expect(tables).toContain('oauth_states');
     expect(tables).toContain('tingee_configs');
     expect(tables).toContain('tingee_accounts');
     expect(tables).toContain('payments');
@@ -31,7 +32,7 @@ describe('schema', () => {
 
   test('payments.reconcile_code has UNIQUE constraint', () => {
     db.exec(`
-      INSERT INTO merchants (shop_domain, api_token_enc) VALUES ('test.myharavan.com', 'enc1');
+      INSERT INTO merchants (shop_domain, access_token_enc) VALUES ('test.myharavan.com', 'enc1');
     `);
     db.exec(`
       INSERT INTO payments (merchant_id, order_id, reconcile_code, amount)

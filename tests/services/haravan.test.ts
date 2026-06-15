@@ -1,4 +1,4 @@
-import { validateToken, getOrder, markOrderPaid } from '../../src/services/haravan';
+import { getShop, getOrder, markOrderPaid, registerScriptTag } from '../../src/services/haravan';
 
 const HARAVAN_BASE = 'https://apis.haravan.com/com';
 
@@ -12,10 +12,12 @@ function mockFetch(status: number, body: unknown) {
 
 afterEach(() => jest.restoreAllMocks());
 
-describe('validateToken', () => {
-  test('succeeds on 200', async () => {
-    const spy = mockFetch(200, { shop: { id: 1 } });
-    await expect(validateToken('tok_abc')).resolves.toBeUndefined();
+describe('getShop', () => {
+  test('returns shop data on 200', async () => {
+    const shopData = { id: 1, domain: 'test.myharavan.com' };
+    const spy = mockFetch(200, { shop: shopData });
+    const result = await getShop('tok_abc');
+    expect(result).toEqual(shopData);
     expect(spy).toHaveBeenCalledWith(
       `${HARAVAN_BASE}/shop.json`,
       expect.objectContaining({ headers: { Authorization: 'Bearer tok_abc' } })
@@ -24,7 +26,7 @@ describe('validateToken', () => {
 
   test('throws on 401', async () => {
     mockFetch(401, {});
-    await expect(validateToken('bad_token')).rejects.toThrow('401');
+    await expect(getShop('bad_token')).rejects.toThrow('401');
   });
 });
 
@@ -63,5 +65,26 @@ describe('markOrderPaid', () => {
   test('throws on non-200', async () => {
     mockFetch(422, {});
     await expect(markOrderPaid('tok_abc', '42', 150000)).rejects.toThrow('422');
+  });
+});
+
+describe('registerScriptTag', () => {
+  test('calls correct URL and body on success', async () => {
+    const spy = mockFetch(201, { script_tag: { id: 1 } });
+    const scriptUrl = 'https://app.example.com/payment-redirect.js';
+    await expect(registerScriptTag('tok_abc', scriptUrl)).resolves.toBeUndefined();
+    expect(spy).toHaveBeenCalledWith(
+      `${HARAVAN_BASE}/script_tags.json`,
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer tok_abc' }),
+        body: JSON.stringify({ script_tag: { event: 'onload', src: scriptUrl } }),
+      })
+    );
+  });
+
+  test('throws on non-200', async () => {
+    mockFetch(422, {});
+    await expect(registerScriptTag('tok_abc', 'https://x.com/s.js')).rejects.toThrow('422');
   });
 });

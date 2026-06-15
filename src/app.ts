@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import authRouter from './routes/auth';
 import configRouter from './routes/config';
 import paymentRouter from './routes/payment';
 import webhookRouter from './routes/webhook';
@@ -14,6 +15,7 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
+app.use('/auth', authRouter);
 app.use('/api/config', configRouter);
 app.use('/api/payments', paymentRouter);
 app.use('/webhook/tingee', webhookRouter);

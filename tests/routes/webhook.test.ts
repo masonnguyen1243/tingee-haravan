@@ -14,9 +14,10 @@ jest.mock('../../src/db/index', () => {
 });
 
 jest.mock('../../src/services/haravan', () => ({
-  validateToken: jest.fn(),
+  getShop: jest.fn(),
   getOrder: jest.fn(),
   markOrderPaid: jest.fn(),
+  registerScriptTag: jest.fn(),
 }));
 
 import db from '../../src/db/index';
@@ -44,7 +45,7 @@ beforeAll(() => {
 afterEach(() => {
   // webhook_events references payments, so delete it first
   realDb.exec(
-    'DELETE FROM webhook_events; DELETE FROM tingee_accounts; DELETE FROM tingee_configs; DELETE FROM payments; DELETE FROM merchants;'
+    'DELETE FROM webhook_events; DELETE FROM tingee_accounts; DELETE FROM tingee_configs; DELETE FROM payments; DELETE FROM oauth_states; DELETE FROM merchants;'
   );
   jest.clearAllMocks();
 });
@@ -57,7 +58,7 @@ function makeSignature(timestamp: string, body: object): string {
 
 function seedDb() {
   const { lastInsertRowid } = realDb
-    .prepare("INSERT INTO merchants (shop_domain, api_token_enc) VALUES ('shop.myharavan.com', ?)")
+    .prepare("INSERT INTO merchants (shop_domain, access_token_enc) VALUES ('shop.myharavan.com', ?)")
     .run(encrypt(HARAVAN_TOKEN, TEST_KEY));
   const merchantId = lastInsertRowid as number;
 

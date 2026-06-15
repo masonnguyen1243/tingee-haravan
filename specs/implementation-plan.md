@@ -1,8 +1,8 @@
 # Tingee × Haravan — Implementation Plan
 
-**Goal:** Build an MVP Node.js middleware that generates VietQR codes for Haravan orders and automatically marks orders as paid when Tingee confirms the transfer.
+**Goal:** Build a Haravan Public App that adds VietQR bank transfer as a payment method. Merchants install the app once via OAuth; the app injects a script into the storefront that redirects customers to the payment page automatically. Tingee webhooks confirm transfers and mark orders paid on Haravan.
 
-**Architecture:** Express.js API + static HTML pages; SQLite for persistence; `@tingee/sdk-node` for all Tingee calls; AES-256-GCM for token encryption at rest. No OAuth — merchants supply their own Haravan Private App token.
+**Architecture:** Haravan Public App (OAuth 2.0 + Script Tags API) + Express.js API + static HTML pages; SQLite (dev) / PostgreSQL (prod); `@tingee/sdk-node` for Tingee calls; AES-256-GCM for token encryption at rest. Multi-tenant — one deployment serves all merchants.
 
 **Tech Stack:** Node.js 20 LTS, Express, TypeScript 5, better-sqlite3, @tingee/sdk-node, Jest + ts-jest, Supertest, tsx (dev runner)
 
@@ -15,26 +15,29 @@ src/
   app.ts              Express app setup — mounts all routes, serves /public
   server.ts           Entry point — loads .env and starts the HTTP server
   db/
-    schema.ts         SQL CREATE TABLE statements for all 5 tables
+    schema.ts         SQL CREATE TABLE statements for all 6 tables
     index.ts          Opens SQLite connection, runs schema on startup, exports db
   services/
-    haravan.ts        validateToken, getOrder, markOrderPaid
+    haravan.ts        getShop, getOrder, markOrderPaid, registerScriptTag
     tingee.ts         getVaList, generateQR (always via @tingee/sdk-node)
   routes/
-    config.ts         /api/config/** — merchant setup endpoints
-    payment.ts        /api/payments — create payment, poll status
+    auth.ts           GET /auth/haravan, GET /auth/haravan/callback (OAuth flow)
+    config.ts         /api/config/** — Tingee setup endpoints (shop-scoped)
+    payment.ts        /api/payments — create payment, poll status (shop-scoped)
     webhook.ts        /webhook/tingee — Tingee IPN receiver
-    pages.ts          GET / and GET /pay — serve HTML pages
+    pages.ts          GET /install, GET /setup, GET /pay — serve HTML pages
   utils/
     crypto.ts         encrypt(text, keyHex) and decrypt(cipher, keyHex)
     reconcile.ts      generateReconcileCode() — returns TG + 7 alphanumeric chars
 public/
-  setup.html          Merchant 3-step configuration wizard
-  pay.html            Customer QR payment page
+  install.html              Merchant install landing page — "Install" button
+  setup.html                Post-install 2-step Tingee config wizard
+  pay.html                  Customer QR payment page
+  payment-redirect.js       Script injected into Haravan storefront via Script Tags API
 tests/
   utils/              crypto.test.ts, reconcile.test.ts
   services/           haravan.test.ts, tingee.test.ts
-  routes/             config.test.ts, payment.test.ts, webhook.test.ts
+  routes/             auth.test.ts, config.test.ts, payment.test.ts, webhook.test.ts
 .env.example
 package.json
 tsconfig.json
@@ -42,193 +45,211 @@ tsconfig.json
 
 ---
 
-## Phase 1: Project Setup
+## Phase 1–4: Completed (single-tenant MVP)
 
-- [x] Initialise git repository
-- [x] Create `package.json` with scripts: `start`, `build` (tsc), `dev` (tsx watch), `test` (jest --runInBand)
-- [x] Add dependencies: `express`, `better-sqlite3`, `@tingee/sdk-node`, `dotenv`
-- [x] Add dev dependencies: `typescript`, `tsx`, `ts-jest`, `jest`, `supertest`, `@types/node`, `@types/express`, `@types/better-sqlite3`, `@types/jest`, `@types/supertest`
-- [x] Run `npm install`
-- [x] Create `.env.example` with `PORT`, `DB_PATH`, `ENCRYPTION_KEY`, `NODE_ENV`
-- [x] Create `tsconfig.json` — target ES2022, CommonJS, outDir dist/
-- [x] Create the full folder structure: `src/db/`, `src/services/`, `src/routes/`, `src/utils/`, `public/`, `tests/utils/`, `tests/services/`, `tests/routes/`, `tests/db/`
-- [x] Create `src/app.ts` — Express instance, JSON middleware, static `/public` serving, `GET /health` returning `{ status: "ok" }`
-- [x] Create `src/server.ts` — loads `.env`, imports `app.ts`, calls `app.listen(PORT)`
-- [x] Verify: `npm run dev` starts without errors; `curl localhost:3000/health` returns `{"status":"ok"}`
-- [x] Commit: `feat: project bootstrap`
+Phases 1–4 are fully implemented and all tests pass. The code in these phases provides the foundation (DB, crypto, Tingee service, Haravan service, route skeletons, HTML pages) that will be refactored in phases 5–7.
 
 ---
 
-## Phase 2: Core UI
+## Phase 5: Haravan OAuth 2.0 App
 
-Build the visual shells of both pages as static HTML. No API calls yet — just layout, styling, and the UI states that will be wired up later.
+**Goal:** Replace manual Haravan token entry with an OAuth 2.0 install flow. After this phase, a merchant installs the app and Haravan grants access automatically — no token pasting needed. Multi-tenant from day one.
 
-**`public/setup.html` — Merchant configuration wizard**
+**Prerequisites (manual — not code):**
+- Register app at `partners.haravan.com` → Apps → Create App
+- Set OAuth redirect URI to `${APP_URL}/auth/haravan/callback`
+- Copy `Client ID` (= `HARAVAN_API_KEY`) and `Client Secret` (= `HARAVAN_API_SECRET`)
 
-- [x] Page heading and short subtitle explaining the 3-step process
-- [x] Step 1 card: inputs for shop domain and Haravan API token; "Confirm" button; error message area below button
-- [x] Step 2 card: inputs for Tingee Client ID and Secret Token; "Get accounts" button; error message area
-- [x] Step 3 card: dropdown for account selection (starts empty); "Complete setup" button; error message area
-- [x] Steps 2 and 3 visually locked (greyed out, non-interactive) until the previous step completes
-- [x] Completed steps show a visual "done" state (green border or checkmark)
-- [x] Success message shown after Step 3 is confirmed
-- [x] Verify manually: open in browser, check layout and step locking works by toggling CSS classes in DevTools
+**Environment variables — update `.env.example`:**
+- [x] Add `HARAVAN_API_KEY` — from Haravan Partner portal (Client ID)
+- [x] Add `HARAVAN_API_SECRET` — from Haravan Partner portal (Client Secret)
+- [x] Add `APP_URL` — public HTTPS URL of this app (e.g. `https://your-app.railway.app`)
 
-**`public/pay.html` — Customer QR payment page**
+**DB Schema changes — `src/db/schema.ts`:**
+- [x] Add `oauth_states` table: `id INTEGER PRIMARY KEY AUTOINCREMENT`, `state TEXT UNIQUE NOT NULL`, `shop TEXT NOT NULL`, `created_at INTEGER NOT NULL` — used for CSRF protection during OAuth
+- [x] Update `merchants` table: rename `api_token_enc` → `access_token_enc`; add `scope TEXT`; add `installed_at INTEGER`
+- [x] Drop and recreate DB on dev (delete `data/db.sqlite`); update any tests that reference `api_token_enc`
 
-- [x] Loading state shown on initial load ("Loading payment info…")
-- [x] Payment content area (hidden until loaded): transfer amount, QR image placeholder, transfer note display, "keep note unchanged" warning box
-- [x] Status area with three states: pending (spinner + "Waiting for payment…"), paid (success message), mismatch (warning message)
-- [x] Error state for when the page cannot load (no order ID in URL, or API failure)
-- [x] Verify manually: open in browser, toggle between states in DevTools
+**Update `src/services/haravan.ts`:**
+- [x] Rename param `token` → `accessToken` everywhere for clarity
+- [x] Update `validateToken(accessToken)` → rename to `getShop(accessToken, shop)` — `GET https://apis.haravan.com/com/shop.json` with `Authorization: Bearer {accessToken}`; returns shop data; throws on non-200
+- [x] Keep `getOrder(accessToken, orderId)` — same logic, renamed param
+- [x] Keep `markOrderPaid(accessToken, orderId, amount)` — same logic, renamed param
+- [x] Add `registerScriptTag(accessToken, shop, scriptUrl)` — `POST https://apis.haravan.com/com/script_tags.json` with body `{ script_tag: { event: "onload", src: scriptUrl } }`; throws on non-200
 
----
+**New route file — `src/routes/auth.ts`:**
+- [x] `GET /auth/haravan`
+  - Read `shop` query param; if missing return 400
+  - Validate format: must match `*.myharavan.com`
+  - Generate random `state` nonce: `crypto.randomBytes(16).toString('hex')`
+  - Insert `{state, shop, created_at: Date.now()}` into `oauth_states`
+  - Redirect to: `https://${shop}/admin/oauth/authorize?client_id=${HARAVAN_API_KEY}&scope=read_orders,write_orders&redirect_uri=${APP_URL}/auth/haravan/callback&state=${state}`
+- [x] `GET /auth/haravan/callback`
+  - Read `code`, `shop`, `state`, `hmac` from query params
+  - Verify `state` exists in `oauth_states` with matching `shop`; delete it (one-time use)
+  - Verify Haravan HMAC: remove `hmac` from params, sort remaining key=value pairs alphabetically, join with `&`, compute `HMAC-SHA256(message, HARAVAN_API_SECRET)` — reject if mismatch
+  - Exchange code: `POST https://${shop}/admin/oauth/access_token` with body `{ client_id: HARAVAN_API_KEY, client_secret: HARAVAN_API_SECRET, code }` → get `{ access_token, scope }`
+  - Encrypt `access_token` with `crypto.ts`
+  - Upsert into `merchants`: `INSERT ... ON CONFLICT(shop_domain) DO UPDATE SET access_token_enc = ..., scope = ..., installed_at = ...`
+  - Call `haravan.registerScriptTag(access_token, shop, `${APP_URL}/payment-redirect.js`)`
+  - Redirect to `${APP_URL}/setup?shop=${shop}`
 
-## Phase 3: Core Backend Logic
+**Update `src/routes/config.ts`:**
+- [x] Remove `POST /api/config/haravan` entirely
+- [x] All endpoints now require `shop` query param; look up `merchant_id` via `shop_domain`
+- [x] `GET /api/config?shop=SHOP` — return `{ tingeeConfigured, accountSelected, shopDomain, selectedAccount }` (remove `haravanConfigured` — always true if merchant exists)
+- [x] `GET /api/config/accounts?shop=SHOP` — unchanged except merchant lookup by shop
+- [x] `POST /api/config/tingee?shop=SHOP` — unchanged except merchant lookup by shop; return 404 if shop not installed
+- [x] `POST /api/config/account?shop=SHOP` — unchanged except merchant lookup by shop
 
-Build the database, utilities, and API services. Test each in isolation with unit/service tests before connecting them to routes.
+**Update `src/routes/payment.ts`:**
+- [x] `POST /api/payments` — require `shop` in request body; look up merchant by `shop_domain`
+- [x] `GET /api/payments/:code/status` — unchanged (reconcile code is globally unique)
 
-**Database**
+**Update `src/routes/webhook.ts`:**
+- [x] Look up merchant via: `reconcile_code → payments.merchant_id → merchants.access_token_enc` and `→ tingee_configs` for secret
+- [x] Rename any reference from `api_token_enc` to `access_token_enc`
+- [x] Everything else unchanged (signature verification, idempotency, markOrderPaid)
 
-- [x] Create `src/db/schema.ts` — SQL `CREATE TABLE IF NOT EXISTS` statements for all 5 tables: `merchants`, `tingee_configs`, `tingee_accounts`, `payments`, `webhook_events` (see data model in `specs/product-spec.md`)
-- [x] Create `src/db/index.ts` — opens `better-sqlite3` connection to `DB_PATH`, enables WAL mode and foreign keys, runs schema on startup, exports the `db` singleton
-- [x] Write `tests/db/schema.test.ts` — verify all 5 tables exist after init; verify `payments.reconcile_code` has UNIQUE constraint
-- [x] Verify: `npm test tests/db` passes
-
-**Utilities**
-
-- [x] Create `src/utils/crypto.ts` — `encrypt(text, keyHex)` using AES-256-GCM (random IV each call); `decrypt(cipher, keyHex)` that throws on tampered input
-- [x] Write `tests/utils/crypto.test.ts` — round-trip test, two encryptions of same input differ, tamper detection throws
-- [x] Create `src/utils/reconcile.ts` — `generateReconcileCode()` returns `TG` followed by 7 random uppercase alphanumeric characters using `node:crypto`
-- [x] Write `tests/utils/reconcile.test.ts` — format matches `TG[A-Z0-9]{7}`; 1000 generated codes are all unique
-- [x] Verify: `npm test tests/utils` passes
-
-**Services**
-
-- [x] Create `src/services/haravan.ts` with three functions:
-  - `validateToken(token)` — `GET /com/shop.json` with Bearer auth; throws on non-200
-  - `getOrder(token, orderId)` — `GET /com/orders/{id}.json`; throws on non-200
-  - `markOrderPaid(token, orderId, amount)` — `POST /com/orders/{id}/transactions.json` with body `{ transaction: { kind: "Capture", amount } }`; throws on non-200
-- [x] Write `tests/services/haravan.test.ts` — mock global `fetch`; test happy path and error path for each function; verify request URL and body shape
-- [x] Create `src/services/tingee.ts` with two functions:
-  - `getVaList(clientId, secretToken)` — calls `@tingee/sdk-node` to `POST /v1/get-va-paging`; throws if response code is not `"00"`
-  - `generateQR(clientId, secretToken, { bankBin, accountNumber, amount, content })` — calls `@tingee/sdk-node` to `POST /v1/generate-viet-qr`; returns `{ qrCode, qrCodeImage }`; throws on non-`"00"`
-- [x] Write `tests/services/tingee.test.ts` — mock `@tingee/sdk-node`; verify `getVaList` returns items; verify `generateQR` passes correct fields including `content`; verify both throw on error codes
-- [x] Verify: `npm test tests/services` passes
-
----
-
-## Phase 4: Connect UI to Data
-
-Create all routes, mount them in `app.ts`, then wire the HTML pages to call the API.
-
-**Config routes — `src/routes/config.ts`**
-
-- [x] `GET /api/config` — returns `{ haravanConfigured, tingeeConfigured, accountSelected }` as booleans; never returns raw tokens
-- [x] `POST /api/config/haravan` — calls `haravan.validateToken`, encrypts token with `crypto.ts`, upserts into `merchants`; returns `{ ok: true }`
-- [x] `POST /api/config/tingee` — calls `tingee.getVaList`, encrypts secret, upserts into `tingee_configs`; returns `{ accounts: [...] }`
-- [x] `POST /api/config/account` — clears existing default, inserts selected account into `tingee_accounts` with `is_default = 1`; returns `{ ok: true }`
-- [x] Write `tests/routes/config.test.ts` using Supertest + `:memory:` SQLite; mock `haravan` and `tingee` services; test full setup flow and `GET /api/config` before and after
-
-**Payment routes — `src/routes/payment.ts`**
-
-- [x] `POST /api/payments` — reads merchant + config + default account from DB; if a pending payment already exists for the same `orderId`, return it; otherwise generate a reconcile code, call `tingee.generateQR`, save to `payments`; returns `{ reconcileCode, qrCodeImage, status }`
-- [x] `GET /api/payments/:code/status` — looks up payment by reconcile code; returns `{ status, amount, paid_at }` or 404
-- [x] Write `tests/routes/payment.test.ts` — test create, idempotency for same orderId, status poll, 404 for unknown code
-
-**Webhook handler — `src/routes/webhook.ts`**
-
-- [x] Receive `POST /webhook/tingee`; read `x-request-timestamp` and `x-signature` from headers
-- [x] Verify signature: `HMAC-SHA512(timestamp + ":" + JSON.stringify(body), secretToken)`; if invalid, log to `webhook_events` and return `200 { code: "00" }` immediately
-- [x] Check `webhook_events` for duplicate `transactionCode`; if seen, return 200 immediately
-- [x] Extract reconcile code from `content` field using pattern `TG[A-Z0-9]+`; look up in `payments`
-- [x] If not found or amount mismatch: log event, update payment status to `mismatch` if needed, return 200
-- [x] If match: call `haravan.markOrderPaid`, update `payments.status` to `paid`, log `webhook_events` with `matched_payment_id`; return `200 { code: "00", message: "Success" }`
-- [x] Write `tests/routes/webhook.test.ts` — test valid signature + match, invalid signature, duplicate, amount mismatch
-
-**Pages router — `src/routes/pages.ts`**
-
-- [x] `GET /` → serve `public/setup.html`
+**Update `src/routes/pages.ts`:**
+- [x] `GET /install` → serve `public/install.html`
+- [x] `GET /setup` → serve `public/setup.html`
 - [x] `GET /pay` → serve `public/pay.html`
+- [x] Remove `GET /` or redirect to `/install`
 
-**Mount all routers in `src/app.ts`**
+**Update `src/app.ts`:**
+- [x] Import and mount `authRouter` at `/auth`
+- [x] Mount updated routes
 
-- [x] Add `configRouter`, `paymentRouter`, `webhookRouter`, `pagesRouter` to `app.ts`
-- [x] Verify: `npm test` passes for all route tests
+**New test — `tests/routes/auth.test.ts`:**
+- [x] `GET /auth/haravan` without shop → 400
+- [x] `GET /auth/haravan?shop=valid.myharavan.com` → 302 redirect to Haravan OAuth URL; state saved in DB
+- [x] `GET /auth/haravan?shop=invalid-domain` → 400
+- [x] `GET /auth/haravan/callback` with invalid state → 400, no token stored
+- [x] `GET /auth/haravan/callback` with invalid HMAC → 400
+- [x] `GET /auth/haravan/callback` valid → merchant upserted; registerScriptTag called; redirect to /setup?shop=...
 
-**Wire `setup.html` to the API**
+**Update `tests/routes/config.test.ts`:**
+- [x] Remove all `POST /api/config/haravan` tests
+- [x] Seed `merchants` directly (simulate post-OAuth state) instead of calling the Haravan config endpoint
+- [x] Pass `?shop=SHOP` on all config requests
+- [x] Verify: `npm test tests/routes/config.test.ts` passes
 
-- [x] Step 1 button calls `POST /api/config/haravan`; on success advances to Step 2
-- [x] Step 2 button calls `POST /api/config/tingee`; on success populates account dropdown from returned list
-- [x] Step 3 button calls `POST /api/config/account` with selected account fields; on success shows success message
-
-**Wire `pay.html` to the API**
-
-- [x] On load: read `order_id` and `amount` from URL params; call `POST /api/payments`; display returned `qrCodeImage` and `reconcileCode`; hide loading state
-- [x] Poll `GET /api/payments/:code/status` every 3 seconds
-- [x] On `paid`: show success message, stop polling
-- [x] On `mismatch`: show warning message, stop polling
-
----
-
-## Phase 5: Validation and Error States
-
-**API validation**
-
-- [ ] `POST /api/config/haravan` returns 400 if `shopDomain` or `apiToken` is missing
-- [ ] `POST /api/config/haravan` returns 400 with error message if Haravan rejects the token (401)
-- [ ] `POST /api/config/tingee` returns 400 if `clientId` or `secretToken` is missing
-- [ ] `POST /api/config/tingee` returns 400 if Tingee rejects the credentials
-- [ ] `POST /api/config/account` returns 400 if any required account field is missing
-- [ ] `POST /api/config/account` returns 400 if Tingee config hasn't been saved yet
-- [ ] `POST /api/payments` returns 400 if `orderId` or `amount` is missing
-- [ ] `POST /api/payments` returns 503 if the app hasn't been fully configured yet
-
-**Security**
-
-- [ ] `GET /api/config` response body must not contain `api_token_enc`, `secret_enc`, or any raw credential value — verify in tests
-- [ ] Webhook handler returns `200 { code: "00" }` for invalid signatures, not a 4xx — verify in tests
-- [ ] Webhook handler does not call `haravan.markOrderPaid` a second time for a duplicate `transactionCode` — verify in tests
-
-**UI error states**
-
-- [ ] Setup wizard shows an inline error below the button if an API call fails at any step; user can correct and retry
-- [ ] Pay page shows a clear error if `order_id` is missing from the URL
-- [ ] Pay page shows a clear error if the `POST /api/payments` call fails
-- [ ] Pay page shows a mismatch warning (not a generic error) when status is `mismatch`
+**Verify:** `npm test` — 85 tests pass ✓
 
 ---
 
-## Phase 6: Local Run Instructions
+## Phase 6: Script Tag — Auto-Redirect on Checkout
 
-Document the full local setup flow in `README.md` so any developer can get it running from a clean clone.
+**Goal:** After install, the app injects a JS snippet into the merchant's Haravan storefront. When a customer reaches the order status page with a pending payment, the script redirects them to `/pay` automatically — no manual payment method link needed in Haravan Admin.
+
+**New file — `public/payment-redirect.js`:**
+- [ ] Script runs on every storefront page (loaded via script tag)
+- [ ] Check if on order status / thank-you page: detect via URL path containing `/checkout/thank_you` or `window.Haravan?.checkout` presence
+- [ ] Read order info from Haravan's storefront context:
+  - `orderId` from `window.Haravan.checkout.order_id`
+  - `amount` from `window.Haravan.checkout.payment_due` (amount still owed, in VND)
+  - `shop` from `window.location.hostname`
+- [ ] If `amount > 0` (payment still pending): `window.location.href = APP_URL + '/pay?order_id=' + orderId + '&amount=' + amount + '&shop=' + shop`
+- [ ] If `amount === 0`: payment already completed — do nothing
+- [ ] Guard against infinite redirect: check if already on the `/pay` page
+- [ ] Replace `APP_URL` at build time OR embed it as a query param when registering the script tag src (e.g. `${APP_URL}/payment-redirect.js?app=${APP_URL}`)
+
+**Update `public/pay.html`:**
+- [ ] Read `shop` from URL params
+- [ ] Include `shop` in all API calls: `POST /api/payments` body includes `{ orderId, amount, shop }`
+- [ ] Poll URL unchanged: `GET /api/payments/:code/status`
+
+**Update `public/setup.html`:**
+- [ ] Remove Step 1 (Haravan token) — OAuth now handles authentication
+- [ ] Rename to 2-step wizard: Step 1 = Tingee credentials, Step 2 = account selection
+- [ ] Read `shop` from URL params (`?shop=SHOP`); pass as `?shop=SHOP` query param on all API calls
+- [ ] On load: call `GET /api/config?shop=${shop}` to restore state
+- [ ] Keep webhook URL box after Step 2 completes
+
+**New file — `public/install.html`:**
+- [ ] Simple landing page: app name, description, "Install" button
+- [ ] "Install" button links to `GET /auth/haravan?shop=` — either pre-filled from URL param or with an input field for shop domain
+- [ ] If `?shop=SHOP` in URL: show "Install for [SHOP]" directly
+- [ ] If no shop param: show an input field where merchant types their shop domain, then submit goes to `/auth/haravan?shop=${input}`
+
+**Verify:** Install app on test shop → navigate to order thank-you page → confirm script redirects to `/pay?order_id=...&amount=...&shop=...`
+
+---
+
+## Phase 7: Multi-tenant Verification and Validation
+
+**Goal:** Confirm the app correctly isolates data between merchants and handles edge cases.
+
+**Multi-tenant isolation:**
+- [ ] Verify `GET /api/config?shop=shopA` never returns shopB's data
+- [ ] Verify webhook from shopA's customer does not affect shopB's orders
+- [ ] Verify `POST /api/payments` with shopA's token cannot generate QR using shopB's Tingee config
+- [ ] Write integration test: two merchants seeded in DB; payments and webhooks correctly routed
+
+**Guard unauthenticated merchants:**
+- [ ] `GET /setup?shop=SHOP` — if shop not in `merchants` table, redirect to `/install?shop=SHOP`
+- [ ] `GET /pay?shop=SHOP` — if shop not in `merchants`, return error page
+- [ ] `POST /api/config/*?shop=SHOP` — if merchant not found, return 404 `{ error: "Shop not installed" }`
+- [ ] `POST /api/payments` — if merchant not found, return 404 `{ error: "Shop not installed" }`
+
+**API validation (carry over from original Phase 5):**
+- [ ] `POST /api/config/tingee` returns 400 if `clientId` or `secretToken` missing
+- [ ] `POST /api/config/tingee` returns 400 if Tingee rejects credentials
+- [ ] `POST /api/config/account` returns 400 if `accountNumber` or `bankBin` missing
+- [ ] `POST /api/config/account` returns 400 if Tingee config not saved yet
+- [ ] `POST /api/payments` returns 400 if `orderId`, `amount`, or `shop` missing
+- [ ] `POST /api/payments` returns 503 if merchant not fully configured (no Tingee config or no account)
+
+**Security:**
+- [ ] `GET /api/config` response must never contain `access_token_enc`, `secret_enc`, or raw credentials
+- [ ] Webhook returns `200 { code: "00" }` for invalid signatures, not 4xx
+- [ ] Webhook does not call `markOrderPaid` twice for duplicate `transactionCode`
+- [ ] OAuth state nonce is single-use (deleted after callback)
+- [ ] OAuth HMAC verification rejects forged callbacks
+
+**UI error states:**
+- [ ] Setup wizard shows inline error if API call fails; user can correct and retry
+- [ ] Pay page shows error if `order_id` or `shop` missing from URL
+- [ ] Pay page shows error if `POST /api/payments` fails
+- [ ] Pay page shows mismatch warning (not generic error) when status is `mismatch`
+- [ ] Install page shows error if shop domain format is invalid
+
+**Verify:** `npm test` — all tests pass including new multi-tenant and validation tests
+
+---
+
+## Phase 8: Local Run and ngrok Setup
+
+Document the full local development flow.
 
 - [ ] Step 1: `npm install`
-- [ ] Step 2: Copy `.env.example` to `.env`; generate `ENCRYPTION_KEY` by running `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`; paste result into `.env`
+- [ ] Step 2: Copy `.env.example` to `.env`; fill in `ENCRYPTION_KEY`, `HARAVAN_API_KEY`, `HARAVAN_API_SECRET`, `APP_URL`
 - [ ] Step 3: `npm run dev` — server starts on `PORT` (default 3000)
-- [ ] Step 4 (for webhook testing): install ngrok; run `ngrok http 3000`; copy the HTTPS URL
-- [ ] Step 5: In Tingee Developers portal, set Webhook URL to `https://<ngrok-url>/webhook/tingee`
-- [ ] Step 6: Open `http://localhost:3000` and complete the 3-step merchant setup
-- [ ] Verify: repeat these steps from a fresh clone on a clean machine (or use a temp directory) to confirm they work end-to-end
+- [ ] Step 4: Run `ngrok http 3000`; copy the HTTPS URL; paste into `.env` as `APP_URL` and restart dev server
+- [ ] Step 5: In Haravan Partner portal → app settings, set OAuth redirect URI to `${APP_URL}/auth/haravan/callback`
+- [ ] Step 6: In Tingee Developers portal, set Webhook URL to `${APP_URL}/webhook/tingee`
+- [ ] Step 7: Open `https://your-shop.myharavan.com` (dev store) → Apps → install your app → OAuth flow completes → redirect to setup page
+- [ ] Step 8: Complete 2-step Tingee setup (credentials + account)
+- [ ] Verify: place a test order, navigate to thank-you page, confirm script redirects to `/pay`
 
 ---
 
-## Phase 7: Demo Setup
+## Phase 9: Demo — End-to-End Test with Real Credentials
 
-Steps to prepare a live end-to-end demo using real (UAT) credentials.
-
-- [ ] Create a Haravan Partner account at `partners.haravan.com` (free); create a dev store
-- [ ] In the dev store's Haravan Admin: create a Private App named "Tingee Payment"; grant Orders: Read and Write; copy the token
+- [ ] Create Haravan Partner account at `partners.haravan.com`; create dev store
+- [ ] Register Public App; set redirect URI and scopes (`read_orders`, `write_orders`)
 - [ ] Log in at `app.tingee.vn` → Developers; copy Client ID and Secret Token (UAT environment)
-- [ ] Set the Tingee webhook URL to your running app's `/webhook/tingee` endpoint
-- [ ] Open the app's setup page and complete all 3 steps using the above credentials
-- [ ] In Haravan Admin → Settings → Payments → Manual Payment Methods: add a method named `Chuyển khoản ngân hàng (QR)`; add payment instructions with the link `https://your-app-domain/pay?order_id=ORDER_ID&amount=AMOUNT`
-- [ ] Place a test order on the dev store; navigate to the payment page URL for that order
-- [ ] Verify the QR renders and the transfer note (reconcile code) is visible
-- [ ] Make a test transfer via a banking app (UAT amounts); confirm the order moves to "Đã thanh toán" in Haravan within a few seconds
-- [ ] Confirm the pay page shows the success message
-- [ ] Check the `webhook_events` table to confirm the IPN was logged with `matched_payment_id` set
-- [ ] Test edge cases:
-  - [ ] Send the webhook request a second time (replay) — confirm `markOrderPaid` is not called again
-  - [ ] Transfer a wrong amount — confirm order is NOT marked paid and status is `mismatch`
-  - [ ] Send a request with a forged signature — confirm the order is not affected
+- [ ] Set Tingee webhook URL to `${APP_URL}/webhook/tingee`
+- [ ] Install app on dev store via OAuth; complete Tingee setup
+- [ ] Confirm script tag is registered: Haravan Admin → Apps → Script Tags
+- [ ] Place test order; navigate to thank-you page; confirm redirect to `/pay` and QR renders
+- [ ] Make test transfer via banking app (UAT); confirm order moves to "Đã thanh toán" in Haravan
+- [ ] Confirm pay page shows success message
+- [ ] Check `webhook_events` table: IPN logged with `matched_payment_id` set
+- [ ] Edge cases:
+  - [ ] Replay webhook — confirm `markOrderPaid` not called twice
+  - [ ] Wrong amount transfer — order NOT marked paid; status = `mismatch`
+  - [ ] Forged signature — order unaffected
+  - [ ] Install same shop twice — upsert, not duplicate merchant
+  - [ ] Second merchant installs — both merchants isolated in DB

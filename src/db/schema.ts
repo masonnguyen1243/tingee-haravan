@@ -1,10 +1,19 @@
 export const SQL_CREATE_TABLES = `
 CREATE TABLE IF NOT EXISTS merchants (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  shop_domain   TEXT    NOT NULL UNIQUE,
-  api_token_enc TEXT    NOT NULL,
-  created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
-  updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  shop_domain       TEXT    NOT NULL UNIQUE,
+  access_token_enc  TEXT    NOT NULL,
+  scope             TEXT,
+  installed_at      INTEGER,
+  created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at        TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS oauth_states (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  state       TEXT    NOT NULL UNIQUE,
+  shop        TEXT    NOT NULL,
+  created_at  INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS tingee_configs (
